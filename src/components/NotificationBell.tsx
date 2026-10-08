@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/utils/supabase/client";
 
 interface Announcement {
@@ -29,6 +30,7 @@ export default function NotificationBell() {
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   // 一斉送信フォームの状態
   const [showAdminForm, setShowAdminForm] = useState(false);
@@ -95,6 +97,7 @@ export default function NotificationBell() {
       }
     }
 
+    setMounted(true);
     checkUserAndAdmin();
     fetchAnnouncements();
   }, []);
@@ -287,14 +290,14 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {/* お知らせ中央モーダル */}
-      {isOpen && (
+      {/* お知らせ中央モーダル（headerのbackdrop-filter等のcontaining blockを脱出するためcreatePortalを使用） */}
+      {isOpen && mounted && createPortal(
         <div
-          className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 pt-14 pb-6 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
+          className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200"
           onClick={() => setIsOpen(false)}
         >
           <div
-            className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[calc(100dvh-5rem)] sm:max-h-[85vh] animate-in zoom-in-95 duration-200 shrink-0"
+            className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85dvh] sm:max-h-[85vh] animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* ヘッダー */}
@@ -504,13 +507,20 @@ export default function NotificationBell() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 管理者パスコード認証モーダル */}
-      {showPasscodeModal && (
-        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 pt-14 pb-6 overflow-y-auto">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 my-auto shrink-0">
+      {showPasscodeModal && mounted && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setShowPasscodeModal(false)}
+        >
+          <div
+            className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h4 className="text-base font-bold text-slate-900 mb-2">👑 管理者（俺）の有効化</h4>
             <p className="text-xs text-slate-600 mb-4 leading-relaxed">
               お知らせを一斉送信するための管理者パスコードを入力してください。
@@ -544,7 +554,8 @@ export default function NotificationBell() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
