@@ -105,7 +105,7 @@ export default async function SongPage({ params }: SongPageProps) {
   const relatedSongs = artistSongs && artistSongs.length > 0 ? artistSongs : fallbackSongs;
   const relatedTitle =
     artistSongs && artistSongs.length > 0
-      ? `${song.profiles?.artist_name || "このアーティスト"}の他の楽曲`
+      ? `${song.profiles?.artist_name || "このクリエイター"}の他の楽曲`
       : "人気の他の楽曲";
 
   return (

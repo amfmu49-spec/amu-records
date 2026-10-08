@@ -39,9 +39,12 @@ export default async function Home() {
     }
   });
 
-  const formattedArtists = (profiles || []).map((p) => ({
+  // リスナーを除外したクリエイター一覧（リスナーは参加クリエイター数・一覧に含めない）
+  const creators = (profiles || []).filter((p) => p.role !== "listener");
+
+  const formattedCreators = creators.map((p) => ({
     id: p.id,
-    artist_name: p.artist_name || "Unknown Artist",
+    artist_name: p.artist_name || "Unknown Creator",
     avatar_url: p.avatar_url,
     song_count: songCountByArtist.get(p.id) || 0,
   })).sort((a, b) => b.song_count - a.song_count);
@@ -63,11 +66,11 @@ export default async function Home() {
       </header>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12">
-        {/* コミュニティ・楽曲統計バッジ & タップで展開される参加アーティスト一覧 */}
+        {/* コミュニティ・楽曲統計バッジ & タップで展開される参加クリエイター一覧 */}
         <CommunityStatsBar
           songCount={songCount ?? 0}
-          artistCount={profiles?.length ?? 0}
-          artists={formattedArtists}
+          artistCount={creators.length}
+          artists={formattedCreators}
         />
 
         {/* ランダムに選ばれた曲の大型プレイヤー */}

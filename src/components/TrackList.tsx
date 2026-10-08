@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { useState } from "react";
 import CommentSection from "@/components/CommentSection";
+import UserRoleBadge from "@/components/UserRoleBadge";
 
 export default function TrackList({ 
   songs, 
@@ -178,6 +179,7 @@ export default function TrackList({
                           )}
                         </span>
                       ))}
+                      <UserRoleBadge role="creator" size="xs" />
                     </div>
                   </div>
                 ) : (

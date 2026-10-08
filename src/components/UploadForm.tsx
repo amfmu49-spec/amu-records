@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
+import UserRoleBadge from "@/components/UserRoleBadge";
 
 export default function UploadForm({ userId, profile }: { userId: string, profile: any }) {
   const [file, setFile] = useState<File | null>(null);
@@ -25,15 +26,17 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
   const router = useRouter();
   const supabase = createClient();
 
-  // 他の参加アーティスト一覧を取得
+  // 他の登録クリエイター一覧を取得（リスナーは除外）
   useEffect(() => {
     supabase
       .from("profiles")
-      .select("id, artist_name, avatar_url")
+      .select("id, artist_name, avatar_url, role")
       .neq("id", userId)
       .order("created_at", { ascending: false })
       .then(({ data }) => {
-        if (data) setAvailableArtists(data);
+        if (data) {
+          setAvailableArtists(data.filter((p: any) => p.role !== "listener"));
+        }
       });
   }, [userId]);
 
@@ -178,8 +181,8 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
     return (
       <div className="bg-white border border-slate-100 rounded-3xl p-10 text-center shadow-sm">
         <h3 className="text-xl font-bold text-slate-800 mb-4">音楽をアップロードする前に</h3>
-        <p className="text-slate-500 mb-6">曲を投稿するには、アーティストプロフィール（名前やアイコン）の登録が必要です。</p>
-        <button type="button" onClick={() => router.push("/profile")} className="bg-slate-900 hover:bg-slate-800 text-white px-8 py-3 rounded-full font-bold transition-all shadow-md active:scale-95">
+        <p className="text-slate-500 mb-6">曲を投稿するには、クリエイタープロフィール（名前やアイコン）の登録が必要です。</p>
+        <button type="button" onClick={() => router.push("/profile")} className="bg-slate-900 hover:bg-slate-800 text-white px-8 py-3 rounded-full font-bold transition-all shadow-md active:scale-95 cursor-pointer">
           プロフィールを登録する
         </button>
       </div>
@@ -201,7 +204,10 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
           </div>
           <div>
             <h2 className="text-xl font-bold text-slate-800 tracking-tight">新しい曲をアップロード</h2>
-            <p className="text-sm text-slate-500 font-medium">投稿者: {profile.artist_name}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-sm text-slate-500 font-medium">投稿者: {profile.artist_name}</p>
+              <UserRoleBadge role={profile.role || "creator"} size="xs" />
+            </div>
           </div>
         </div>
         
@@ -231,21 +237,21 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
             <input type="text" maxLength={100} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="タイトルを入力 (100文字以内)" className="w-full px-4 sm:px-5 py-3 sm:py-3.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 transition-all text-sm sm:text-base" required disabled={isUploading} />
           </div>
 
-          {/* コラボアーティスト設定（最大3人：投稿者＋2名） */}
+          {/* コラボクリエイター設定（最大3人：投稿者＋2名） */}
           <div className="bg-slate-50/80 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-3">
             <div className="flex items-center justify-between">
               <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
                 <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
-                コラボアーティスト (任意・最大2名追加可能)
+                コラボクリエイター (任意・最大2名追加可能)
               </label>
               <span className="text-[11px] text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full font-bold border border-indigo-100">
                 最大3人連名
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              他の登録アーティストとコラボした場合、選択すると「A × B × C」としてクレジットされ、それぞれのアーティストページにも楽曲が表示されます。
+              他の登録クリエイターとコラボした場合、選択すると「A × B × C」としてクレジットされ、それぞれのクリエイターページにも楽曲が表示されます。
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
@@ -294,7 +300,7 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
                     <>
                       <span className="text-indigo-500 font-extrabold">×</span>
                       <span className="text-indigo-700">
-                        {availableArtists.find((a) => a.id === coArtist1)?.artist_name || "アーティスト"}
+                        {availableArtists.find((a) => a.id === coArtist1)?.artist_name || "クリエイター"}
                       </span>
                     </>
                   )}
@@ -302,7 +308,7 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
                     <>
                       <span className="text-indigo-500 font-extrabold">×</span>
                       <span className="text-indigo-700">
-                        {availableArtists.find((a) => a.id === coArtist2)?.artist_name || "アーティスト"}
+                        {availableArtists.find((a) => a.id === coArtist2)?.artist_name || "クリエイター"}
                       </span>
                     </>
                   )}

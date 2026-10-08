@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAudioPlayer } from "@/components/AudioPlayerProvider";
 import { createClient } from "@/utils/supabase/client";
 import Link from "next/link";
+import UserRoleBadge from "@/components/UserRoleBadge";
 
 interface SongDetailHeroProps {
   song: any;
@@ -173,6 +174,7 @@ export default function SongDetailHero({
                     <span className="text-xs sm:text-sm font-semibold text-slate-200 group-hover:text-white transition-colors truncate max-w-[140px] sm:max-w-[200px]">
                       {a.artist_name}
                     </span>
+                    <UserRoleBadge role={a.role} size="xs" theme="dark" />
                     <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                     </svg>

@@ -50,7 +50,7 @@ export default function CommunityStatsBar({
               : "border-slate-200/90 hover:border-purple-300 hover:shadow-md"
           }`}
           aria-expanded={isOpen}
-          aria-label="参加アーティスト一覧を表示"
+          aria-label="参加クリエイター一覧を表示"
         >
           <span className="w-5 h-5 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -62,7 +62,7 @@ export default function CommunityStatsBar({
               />
             </svg>
           </span>
-          <span className="text-xs sm:text-sm font-semibold text-slate-500">参加アーティスト</span>
+          <span className="text-xs sm:text-sm font-semibold text-slate-500">参加クリエイター</span>
           <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
             {artistCount}
             <span className="text-xs font-bold text-slate-500 ml-1">人</span>
@@ -79,18 +79,18 @@ export default function CommunityStatsBar({
         </button>
       </div>
 
-      {/* タップ時に展開される参加アーティスト一覧 */}
+      {/* タップ時に展開される参加クリエイター一覧 */}
       {isOpen && (
         <div className="mt-4 bg-white/95 backdrop-blur-xl border border-purple-100 rounded-3xl p-5 sm:p-6 shadow-xl shadow-purple-500/5 animate-in fade-in slide-in-from-top-3 duration-300">
           <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
             <div>
               <h3 className="font-extrabold text-slate-900 text-base sm:text-lg flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-purple-600"></span>
-                参加アーティスト一覧
+                参加クリエイター一覧
                 <span className="text-xs font-normal text-slate-500">（全{artists.length}名）</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                アーティストをタップすると専用ページに移動し、全楽曲やSNSをチェックできます
+                クリエイターをタップすると専用ページに移動し、全楽曲やSNSをチェックできます
               </p>
             </div>
             <button
@@ -102,7 +102,7 @@ export default function CommunityStatsBar({
             </button>
           </div>
 
-          {/* アーティストグリッド */}
+          {/* クリエイターグリッド */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4">
             {artists.map((artist) => (
               <Link

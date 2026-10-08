@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import TrackList from "@/components/TrackList";
 import RandomPlayButton from "@/components/RandomPlayButton";
 import AuthButton from "@/components/AuthButton";
+import UserRoleBadge from "@/components/UserRoleBadge";
 import { connection } from "next/server";
 
 export default async function ArtistPage({ params }: { params: Promise<{ id: string }> }) {
@@ -81,7 +82,10 @@ export default async function ArtistPage({ params }: { params: Promise<{ id: str
           </div>
 
           <div className="flex-1 text-center sm:text-left z-10">
-            <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">{profile.artist_name}</h2>
+            <div className="flex items-center justify-center sm:justify-start gap-3 mb-4 flex-wrap">
+              <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">{profile.artist_name}</h2>
+              <UserRoleBadge role={profile.role || "creator"} size="sm" />
+            </div>
             
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 mb-6">
               {safeTiktok && (

@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
 import Link from "next/link";
 import UploadForm from "@/components/UploadForm";
+import UserRoleBadge from "@/components/UserRoleBadge";
 
 export default function ProfilePage() {
   const [user, setUser] = useState<any>(null);
+  const [role, setRole] = useState<"creator" | "listener">("creator");
   const [artistName, setArtistName] = useState("");
   const [tiktokUrl, setTiktokUrl] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -43,6 +45,7 @@ export default function ProfilePage() {
 
       if (profile) {
         setHasProfile(true);
+        setRole(profile.role === "listener" ? "listener" : "creator");
         setArtistName(profile.artist_name || "");
         setTiktokUrl(profile.tiktok_url || "");
         setYoutubeUrl(profile.youtube_url || "");
@@ -55,6 +58,7 @@ export default function ProfilePage() {
       } else {
         // デフォルト名
         setArtistName(user.user_metadata?.full_name || "New Artist");
+        setRole("creator");
       }
 
       // 他の登録アーティスト一覧の取得（コラボ選択用）
@@ -145,6 +149,7 @@ export default function ProfilePage() {
           suno_url: sunoUrl.trim() || null,
           youtube_embed_url: youtubeEmbedUrl.trim() || null,
           tiktok_embed_url: tiktokEmbedUrl.trim() || null,
+          role: role,
         });
 
       if (error) throw error;
@@ -234,9 +239,81 @@ export default function ProfilePage() {
         </Link>
 
         <div className="bg-white rounded-[2rem] p-8 sm:p-12 shadow-sm border border-slate-200">
-          <h1 className="text-3xl font-black text-slate-900 mb-8">アーティストプロフィール設定</h1>
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-8">
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900">プロフィール設定</h1>
+            <UserRoleBadge role={role} size="sm" />
+          </div>
           
           <form onSubmit={handleSave} className="space-y-8">
+            {/* ユーザータイプ（クリエイター / リスナー）の選択 */}
+            <div>
+              <label className="block text-sm font-bold text-slate-800 mb-2">
+                ユーザータイプ <span className="text-red-500">*</span>
+              </label>
+              <p className="text-xs text-slate-500 mb-3">
+                あなたの活動スタイルに合わせて選択してください。後からいつでも変更できます。
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {/* クリエイターカード */}
+                <button
+                  type="button"
+                  onClick={() => setRole("creator")}
+                  className={`p-4 rounded-2xl border-2 text-left transition-all relative flex flex-col justify-between cursor-pointer ${
+                    role === "creator"
+                      ? "border-indigo-600 bg-indigo-50/40 shadow-sm"
+                      : "border-slate-200 bg-white hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-2xl">🎨</span>
+                    <UserRoleBadge role="creator" size="xs" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">クリエイター</h4>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      オリジナル楽曲を投稿・配信し、トップのクリエイター一覧に掲載されます。
+                    </p>
+                  </div>
+                  {role === "creator" && (
+                    <div className="absolute top-3 right-3 text-indigo-600">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  )}
+                </button>
+
+                {/* リスナーカード */}
+                <button
+                  type="button"
+                  onClick={() => setRole("listener")}
+                  className={`p-4 rounded-2xl border-2 text-left transition-all relative flex flex-col justify-between cursor-pointer ${
+                    role === "listener"
+                      ? "border-emerald-600 bg-emerald-50/40 shadow-sm"
+                      : "border-slate-200 bg-white hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-2xl">🎧</span>
+                    <UserRoleBadge role="listener" size="xs" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">リスナー</h4>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      音楽の試聴、いいね、コメントを専門で楽しみたい方向けです（参加クリエイター数には含まれません）。
+                    </p>
+                  </div>
+                  {role === "listener" && (
+                    <div className="absolute top-3 right-3 text-emerald-600">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  )}
+                </button>
+              </div>
+            </div>
+
             {/* アバター */}
             <div className="flex flex-col items-center gap-4">
               <div className="relative w-32 h-32 rounded-full overflow-hidden bg-slate-100 border-4 border-white shadow-lg flex items-center justify-center">
@@ -252,10 +329,13 @@ export default function ProfilePage() {
               </label>
             </div>
 
-            {/* アーティスト名 */}
+            {/* 表示名 / クリエイター名 */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">アーティスト名 <span className="text-red-500">*</span></label>
-              <input type="text" required value={artistName} onChange={e => setArtistName(e.target.value)} className="w-full px-5 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 transition-all" />
+              <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                {role === "creator" ? "クリエイター名" : "表示名"} <span className="text-red-500">*</span>
+                <UserRoleBadge role={role} size="xs" />
+              </label>
+              <input type="text" required value={artistName} onChange={e => setArtistName(e.target.value)} placeholder="名前を入力" className="w-full px-5 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 transition-all" />
             </div>
 
             <hr className="border-slate-100" />
@@ -303,17 +383,50 @@ export default function ProfilePage() {
           </form>
         </div>
 
-        {/* 楽曲アップロードフォーム (プロフィールが保存されている場合のみ表示) */}
+        {/* 楽曲アップロードフォーム または リスナー案内カード */}
         {hasProfile ? (
-          <div className="mt-12">
-            <UploadForm 
-              userId={user.id} 
-              profile={{ artist_name: artistName, avatar_url: avatarPreview }} 
-            />
-          </div>
+          role === "listener" ? (
+            <div className="mt-12 bg-white rounded-[2rem] p-8 sm:p-10 text-center border border-emerald-100 shadow-sm animate-in fade-in duration-200">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto mb-4 text-2xl shadow-sm">
+                🎧
+              </div>
+              <div className="inline-flex items-center gap-2 mb-2">
+                <h3 className="text-xl font-black text-slate-900">リスナーとして登録中</h3>
+                <UserRoleBadge role="listener" size="sm" />
+              </div>
+              <p className="text-sm text-slate-600 max-w-md mx-auto mb-6 leading-relaxed">
+                お気に入りのクリエイターを見つけて、高音質ストリーミング再生やいいね、コメントをお楽しみいただけます。参加クリエイターの人数にはカウントされません。
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <Link
+                  href="/"
+                  className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-2.5 rounded-full text-sm font-bold shadow-md transition-all active:scale-95"
+                >
+                  楽曲を探しにいく
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRole("creator");
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-6 py-2.5 rounded-full text-sm font-bold transition-all active:scale-95 cursor-pointer"
+                >
+                  クリエイターに切り替える
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-12">
+              <UploadForm 
+                userId={user.id} 
+                profile={{ artist_name: artistName, avatar_url: avatarPreview, role: role }} 
+              />
+            </div>
+          )
         ) : (
           <div className="mt-12 bg-white rounded-[2rem] p-8 text-center border border-slate-200">
-            <p className="text-slate-500 font-medium">楽曲をアップロードするには、先にプロフィールを保存してください。</p>
+            <p className="text-slate-500 font-medium">プロフィールを保存すると、音楽のアップロードやリスナー設定が有効になります。</p>
           </div>
         )}
 
@@ -335,9 +448,9 @@ export default function ProfilePage() {
                         <textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 h-20 resize-none" />
                       </div>
                       
-                      {/* コラボアーティスト編集 */}
+                      {/* コラボクリエイター編集 */}
                       <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
-                        <label className="block text-xs font-bold text-slate-700">コラボアーティスト設定 (最大2名)</label>
+                        <label className="block text-xs font-bold text-slate-700">コラボクリエイター設定 (最大2名)</label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <div>
                             <span className="block text-[11px] text-slate-500 mb-0.5">コラボ相手 1</span>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
+import UserRoleBadge from "@/components/UserRoleBadge";
 
 type Comment = {
   id: string;
@@ -13,6 +14,7 @@ type Comment = {
   profiles: {
     artist_name: string;
     avatar_url: string | null;
+    role?: string | null;
   };
 };
 
@@ -54,7 +56,7 @@ export default function CommentSection({
     const userIds = [...new Set(commentsData.map(c => c.user_id))];
     const { data: profilesData } = await supabase
       .from("profiles")
-      .select("id, artist_name, avatar_url")
+      .select("id, artist_name, avatar_url, role")
       .in("id", userIds);
 
     // 3. Javascript側で合体させる (Supabaseのキャッシュエラーを完全回避)
@@ -62,7 +64,7 @@ export default function CommentSection({
       const profile = profilesData?.find(p => p.id === comment.user_id);
       return {
         ...comment,
-        profiles: profile || { artist_name: "Unknown", avatar_url: null }
+        profiles: profile || { artist_name: "Unknown", avatar_url: null, role: "creator" }
       };
     });
 
@@ -102,13 +104,13 @@ export default function CommentSection({
       // 2. 自分のプロフィール情報を取得して合体させる
       const { data: myProfile } = await supabase
         .from("profiles")
-        .select("artist_name, avatar_url")
+        .select("artist_name, avatar_url, role")
         .eq("id", currentUserId)
         .single();
         
       const mergedNewComment = {
         ...newCommentData,
-        profiles: myProfile || { artist_name: "Unknown", avatar_url: null }
+        profiles: myProfile || { artist_name: "Unknown", avatar_url: null, role: "creator" }
       };
 
       const updated = [...comments, mergedNewComment];
@@ -167,7 +169,10 @@ export default function CommentSection({
                 </div>
                 <div className="flex-1">
                   <div className="bg-white px-4 py-3 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-sm group relative">
-                    <p className="font-bold text-slate-800 mb-1">{comment.profiles?.artist_name}</p>
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                      <p className="font-bold text-slate-800">{comment.profiles?.artist_name}</p>
+                      <UserRoleBadge role={comment.profiles?.role} size="xs" />
+                    </div>
                     <p className="text-slate-600 whitespace-pre-wrap">{comment.content}</p>
                   </div>
                   <div className="flex items-center gap-4 mt-1 ml-2 text-xs text-slate-400">
@@ -198,7 +203,10 @@ export default function CommentSection({
                       </div>
                       <div className="flex-1">
                         <div className="bg-white px-3 py-2 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-sm">
-                          <p className="font-bold text-slate-800 text-xs mb-0.5">{reply.profiles?.artist_name}</p>
+                          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                            <p className="font-bold text-slate-800 text-xs">{reply.profiles?.artist_name}</p>
+                            <UserRoleBadge role={reply.profiles?.role} size="xs" />
+                          </div>
                           <p className="text-slate-600 whitespace-pre-wrap">{reply.content}</p>
                         </div>
                         <div className="flex items-center gap-3 mt-1 ml-2 text-[10px] text-slate-400">

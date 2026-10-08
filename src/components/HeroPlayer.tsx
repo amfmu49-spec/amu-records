@@ -2,6 +2,7 @@
 
 import { useAudioPlayer } from "./AudioPlayerProvider";
 import Link from "next/link";
+import UserRoleBadge from "@/components/UserRoleBadge";
 
 export default function HeroPlayer({ song }: { song: any }) {
   const { playSong, currentSong, isPlaying } = useAudioPlayer();
@@ -108,6 +109,7 @@ export default function HeroPlayer({ song }: { song: any }) {
                     )}
                   </span>
                 ))}
+                <UserRoleBadge role="creator" size="xs" theme="dark" />
               </div>
             </>
           ) : (
