@@ -1,69 +1,85 @@
-import Image from "next/image";
+import { createClient } from "@/utils/supabase/server";
+import AuthButton from "@/components/AuthButton";
+import Link from "next/link";
+import TrackList from "@/components/TrackList";
+import RandomPlayButton from "@/components/RandomPlayButton";
+import HeroPlayer from "@/components/HeroPlayer";
+import { connection } from "next/server";
 
-export default function Home() {
+export default async function Home() {
+  await connection();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  let userProfile = null;
+  if (user) {
+    const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+    userProfile = data;
+  }
+
+  const { data: songs, error } = await supabase
+    .from("songs")
+    .select("*, profiles(*), likes(user_id)")
+    .order("created_at", { ascending: false });
+
+  const { data: rankedSongs } = await supabase
+    .from("songs")
+    .select("*, profiles(*), likes(user_id)")
+    .order("play_count", { ascending: false })
+    .limit(5);
+
+  // サーバー側でランダムな1曲を選ぶ
+  const randomSong = songs && songs.length > 0 ? songs[Math.floor(Math.random() * songs.length)] : null;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen bg-slate-50/50 text-slate-900 selection:bg-slate-900 selection:text-white pb-32 font-sans">
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200 px-4 sm:px-6 py-4 flex justify-between items-center shadow-sm">
+        <div className="flex items-center shrink">
+          <Link href="/" className="relative z-20 block shrink">
+            <img src="/logo.png" alt="AMU RECORDS" className="h-8 sm:h-12 md:h-16 w-auto max-w-[200px] sm:max-w-none object-contain cursor-pointer hover:opacity-80 transition-opacity" />
+          </Link>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className="shrink-0 relative z-20 pl-2">
+          <AuthButton user={user} />
         </div>
-      </main>
-    </div>
+      </header>
+
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12">
+        {/* ランダムに選ばれた曲の大型プレイヤー */}
+        <HeroPlayer song={randomSong} />
+
+        <div className="grid grid-cols-1 gap-10 sm:gap-16 min-w-0 mt-4 sm:mt-8">
+          {/* ランキングセクション */}
+          <div className="min-w-0">
+            <div className="flex items-center justify-between mb-4 sm:mb-8">
+              <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 sm:gap-3 text-slate-800 tracking-tight">
+                <span className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100">
+                  <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
+                </span>
+                人気のトラック
+              </h2>
+            </div>
+            
+            <TrackList songs={rankedSongs || []} currentUserId={user?.id} showRank={true} />
+          </div>
+
+          {/* 新着セクション */}
+          <div className="min-w-0">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-2xl font-bold flex items-center gap-3 text-slate-800 tracking-tight">
+                <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200">
+                  <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </span>
+                最新のトラック
+              </h2>
+              
+              {user && <RandomPlayButton songs={songs || []} />}
+            </div>
+            
+            <TrackList songs={songs || []} currentUserId={user?.id} />
+          </div>
+        </div>
+      </div>
+    </main>
   );
 }
