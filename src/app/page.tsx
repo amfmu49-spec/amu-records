@@ -21,8 +21,8 @@ export default async function Home() {
   ] = await Promise.all([
     supabase.from("songs").select("*", { count: "exact", head: true }),
     supabase.from("profiles").select("*").order("created_at", { ascending: false }),
-    supabase.from("songs").select("*, profiles(*), likes(user_id)").order("created_at", { ascending: false }),
-    supabase.from("songs").select("*, profiles(*), likes(user_id)").order("play_count", { ascending: false }).limit(5),
+    supabase.from("songs").select("*, profiles(*), likes(user_id), amu_comments(id)").order("created_at", { ascending: false }),
+    supabase.from("songs").select("*, profiles(*), likes(user_id), amu_comments(id)").order("play_count", { ascending: false }).limit(5),
   ]);
 
   // アーティストごとの曲数を集計

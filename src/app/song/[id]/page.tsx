@@ -61,7 +61,7 @@ export default async function SongPage({ params }: SongPageProps) {
   // 楽曲情報の取得
   const { data: song } = await supabase
     .from("songs")
-    .select("*, profiles(*), likes(user_id)")
+    .select("*, profiles(*), likes(user_id), amu_comments(id)")
     .eq("id", id)
     .single();
 
@@ -74,11 +74,12 @@ export default async function SongPage({ params }: SongPageProps) {
 
   const isLiked = song.likes?.some((l: any) => l.user_id === user?.id) || false;
   const likeCount = song.likes?.length || 0;
+  const commentCount = song.amu_comments?.length || 0;
 
   // このアーティストの他の楽曲
   const { data: artistSongs } = await supabase
     .from("songs")
-    .select("*, profiles(*), likes(user_id)")
+    .select("*, profiles(*), likes(user_id), amu_comments(id)")
     .eq("user_id", song.user_id)
     .neq("id", song.id)
     .order("created_at", { ascending: false })
@@ -89,7 +90,7 @@ export default async function SongPage({ params }: SongPageProps) {
   if (!artistSongs || artistSongs.length === 0) {
     const { data: popular } = await supabase
       .from("songs")
-      .select("*, profiles(*), likes(user_id)")
+      .select("*, profiles(*), likes(user_id), amu_comments(id)")
       .neq("id", song.id)
       .order("play_count", { ascending: false })
       .limit(4);
@@ -140,6 +141,7 @@ export default async function SongPage({ params }: SongPageProps) {
           initialIsLiked={isLiked}
           likeCount={likeCount}
           currentUserId={user?.id}
+          commentCount={commentCount}
         />
 
         {/* コメントセクション */}
@@ -157,6 +159,9 @@ export default async function SongPage({ params }: SongPageProps) {
                 </svg>
               </span>
               コメント・応援メッセージ
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700">
+                {commentCount}件
+              </span>
             </h2>
           </div>
 

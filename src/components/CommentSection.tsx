@@ -16,7 +16,15 @@ type Comment = {
   };
 };
 
-export default function CommentSection({ songId, currentUserId }: { songId: string, currentUserId?: string }) {
+export default function CommentSection({ 
+  songId, 
+  currentUserId,
+  onCountChange
+}: { 
+  songId: string; 
+  currentUserId?: string;
+  onCountChange?: (count: number) => void;
+}) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [newComment, setNewComment] = useState("");
@@ -59,6 +67,7 @@ export default function CommentSection({ songId, currentUserId }: { songId: stri
     });
 
     setComments(mergedComments);
+    onCountChange?.(mergedComments.length);
     setIsLoading(false);
   };
 
@@ -102,7 +111,9 @@ export default function CommentSection({ songId, currentUserId }: { songId: stri
         profiles: myProfile || { artist_name: "Unknown", avatar_url: null }
       };
 
-      setComments([...comments, mergedNewComment]);
+      const updated = [...comments, mergedNewComment];
+      setComments(updated);
+      onCountChange?.(updated.length);
       setNewComment("");
       setReplyingTo(null);
     }
@@ -113,7 +124,9 @@ export default function CommentSection({ songId, currentUserId }: { songId: stri
     if (!confirm("コメントを削除しますか？")) return;
     
     // UI側で即座に削除（返信も一緒に消えるように親IDもチェック）
-    setComments(comments.filter(c => c.id !== commentId && c.parent_id !== commentId));
+    const updated = comments.filter(c => c.id !== commentId && c.parent_id !== commentId);
+    setComments(updated);
+    onCountChange?.(updated.length);
     
     // DBから削除
     await supabase.from("amu_comments").delete().eq("id", commentId);
@@ -130,6 +143,16 @@ export default function CommentSection({ songId, currentUserId }: { songId: stri
   return (
     <div className="p-5 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl animate-in fade-in slide-in-from-top-4 duration-300">
       
+      {/* コメント件数バッジヘッダー */}
+      <div className="flex items-center justify-between mb-4 pb-2.5 border-b border-slate-200/60">
+        <div className="flex items-center gap-2">
+          <span className="font-extrabold text-xs sm:text-sm text-slate-800">コメント一覧</span>
+          <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-700">
+            {comments.length}件
+          </span>
+        </div>
+      </div>
+
       <div className="space-y-6 mb-6 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
         {parentComments.length === 0 ? (
           <p className="text-center text-sm text-slate-400 py-4">まだコメントはありません。最初のコメントをしてみましょう！</p>

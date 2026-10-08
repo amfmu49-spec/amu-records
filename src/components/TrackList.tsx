@@ -36,6 +36,14 @@ export default function TrackList({
     }, {})
   );
 
+  // コメント件数のローカル状態管理（即時反映用）
+  const [commentsState, setCommentsState] = useState<{ [key: string]: number }>(
+    songs.reduce((acc, song) => {
+      acc[song.id] = song.amu_comments?.length || 0;
+      return acc;
+    }, {})
+  );
+
   const toggleLike = async (songId: string) => {
     if (!currentUserId) {
       alert("いいねするにはログインが必要です");
@@ -157,10 +165,19 @@ export default function TrackList({
                   <button 
                     type="button"
                     onClick={() => setActiveCommentSongId(activeCommentSongId === song.id ? null : song.id)}
-                    className={`flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border transition-all active:scale-95 text-[10px] sm:text-xs cursor-pointer select-none shrink-0 ${activeCommentSongId === song.id ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-100'}`}
+                    className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border transition-all active:scale-95 text-[10px] sm:text-xs cursor-pointer select-none shrink-0 ${activeCommentSongId === song.id ? 'bg-indigo-50 border-indigo-200 text-indigo-600 font-bold' : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-slate-100'}`}
                   >
                     <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
                     <span>コメント</span>
+                    <span className={`px-1.5 py-0.2 rounded-full font-bold text-[10px] ${
+                      activeCommentSongId === song.id 
+                        ? 'bg-indigo-200 text-indigo-800' 
+                        : (commentsState[song.id] ?? (song.amu_comments?.length || 0)) > 0
+                          ? 'bg-indigo-100 text-indigo-700 font-black'
+                          : 'bg-slate-200/70 text-slate-500'
+                    }`}>
+                      {commentsState[song.id] ?? (song.amu_comments?.length || 0)}
+                    </span>
                   </button>
 
                   <Link
@@ -194,7 +211,11 @@ export default function TrackList({
               {/* コメントセクション */}
               {activeCommentSongId === song.id && (
                 <div className="mt-[-1rem] mx-4 border-x border-b border-slate-200 rounded-b-2xl overflow-hidden shadow-sm pt-4 relative z-0">
-                  <CommentSection songId={song.id} currentUserId={currentUserId} />
+                  <CommentSection 
+                    songId={song.id} 
+                    currentUserId={currentUserId}
+                    onCountChange={(count) => setCommentsState(prev => ({ ...prev, [song.id]: count }))}
+                  />
                 </div>
               )}
             </div>

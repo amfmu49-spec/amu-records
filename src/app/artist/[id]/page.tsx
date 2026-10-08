@@ -22,7 +22,7 @@ export default async function ArtistPage({ params }: { params: Promise<{ id: str
 
   const { data: songs } = await supabase
     .from("songs")
-    .select("*, profiles(*), likes(user_id)")
+    .select("*, profiles(*), likes(user_id), amu_comments(id)")
     .eq("user_id", id)
     .order("created_at", { ascending: false });
     
