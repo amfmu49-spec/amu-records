@@ -24,7 +24,7 @@ export default async function ArtistPage({ params }: { params: Promise<{ id: str
   // 本人が投稿した曲、またはコラボアーティストとして参加した曲をすべて取得
   const { data: songs } = await supabase
     .from("songs")
-    .select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*), likes(user_id), amu_comments(id)")
+    .select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(user_id), amu_comments(id)")
     .or(`user_id.eq.${id},co_artist_id_1.eq.${id},co_artist_id_2.eq.${id}`)
     .order("created_at", { ascending: false });
     

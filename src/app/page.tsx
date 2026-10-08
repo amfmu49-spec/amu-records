@@ -21,8 +21,8 @@ export default async function Home() {
   ] = await Promise.all([
     supabase.from("songs").select("*", { count: "exact", head: true }),
     supabase.from("profiles").select("*").order("created_at", { ascending: false }),
-    supabase.from("songs").select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*), likes(user_id), amu_comments(id)").order("created_at", { ascending: false }),
-    supabase.from("songs").select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*), likes(user_id), amu_comments(id)").order("play_count", { ascending: false }).limit(5),
+    supabase.from("songs").select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(user_id), amu_comments(id)").order("created_at", { ascending: false }),
+    supabase.from("songs").select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(user_id), amu_comments(id)").order("play_count", { ascending: false }).limit(5),
   ]);
 
   // アーティストごとの参加曲数を集計（単独＋コラボ参加含む）

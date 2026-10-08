@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: SongPageProps): Promise<Metad
 
   const { data: song } = await supabase
     .from("songs")
-    .select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*)")
+    .select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*)")
     .eq("id", id)
     .single();
 
@@ -66,7 +66,7 @@ export default async function SongPage({ params }: SongPageProps) {
   // 楽曲情報の取得
   const { data: song } = await supabase
     .from("songs")
-    .select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*), likes(user_id), amu_comments(id)")
+    .select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(user_id), amu_comments(id)")
     .eq("id", id)
     .single();
 
@@ -84,7 +84,7 @@ export default async function SongPage({ params }: SongPageProps) {
   // このアーティストの他の楽曲（メイン投稿またはコラボ参加）
   const { data: artistSongs } = await supabase
     .from("songs")
-    .select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*), likes(user_id), amu_comments(id)")
+    .select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(user_id), amu_comments(id)")
     .or(`user_id.eq.${song.user_id},co_artist_id_1.eq.${song.user_id},co_artist_id_2.eq.${song.user_id}`)
     .neq("id", song.id)
     .order("created_at", { ascending: false })
@@ -95,7 +95,7 @@ export default async function SongPage({ params }: SongPageProps) {
   if (!artistSongs || artistSongs.length === 0) {
     const { data: popular } = await supabase
       .from("songs")
-      .select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*), likes(user_id), amu_comments(id)")
+      .select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(user_id), amu_comments(id)")
       .neq("id", song.id)
       .order("play_count", { ascending: false })
       .limit(4);
