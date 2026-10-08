@@ -68,10 +68,10 @@ export default async function Home() {
         <HeroPlayer song={randomSong} />
 
         <div className="grid grid-cols-1 gap-10 sm:gap-16 min-w-0 mt-4 sm:mt-8">
-          {/* 1. 最新のトラック（ユーザー要望により一番上に配置） */}
+          {/* 1. 最新のトラック（ユーザー要望により一番上に配置 & 5曲まで表示） */}
           <div className="min-w-0">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-bold flex items-center gap-3 text-slate-800 tracking-tight">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6 sm:mb-8">
+              <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 sm:gap-3 text-slate-800 tracking-tight">
                 <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200">
                   <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 </span>
@@ -81,7 +81,7 @@ export default async function Home() {
               {user && <RandomPlayButton songs={songs || []} />}
             </div>
             
-            <TrackList songs={songs || []} currentUserId={user?.id} />
+            <TrackList songs={songs || []} currentUserId={user?.id} limit={5} />
           </div>
 
           {/* 2. 人気のトラック（ランキングセクション） */}
