@@ -45,10 +45,10 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen bg-slate-50/50 text-slate-900 selection:bg-slate-900 selection:text-white pb-32 font-sans">
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200 px-4 sm:px-6 py-4 flex justify-between items-center shadow-sm">
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200 px-4 sm:px-6 py-2 sm:py-3 md:py-4 flex justify-between items-center shadow-sm">
         <div className="flex items-center shrink">
           <Link href="/" className="relative z-20 block shrink">
-            <img src="/logo.png" alt="AMU RECORDS" className="h-8 sm:h-12 md:h-16 w-auto max-w-[200px] sm:max-w-none object-contain cursor-pointer hover:opacity-80 transition-opacity" />
+            <img src="/logo.png" alt="AMU RECORDS" className="h-20 sm:h-[120px] md:h-[160px] w-auto max-w-[280px] sm:max-w-none object-contain cursor-pointer hover:opacity-80 transition-opacity" />
           </Link>
         </div>
         <div className="shrink-0 relative z-20 pl-2">
