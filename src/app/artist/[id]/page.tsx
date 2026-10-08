@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import TrackList from "@/components/TrackList";
 import RandomPlayButton from "@/components/RandomPlayButton";
+import AuthButton from "@/components/AuthButton";
 import { connection } from "next/server";
 
 export default async function ArtistPage({ params }: { params: Promise<{ id: string }> }) {
@@ -20,10 +21,11 @@ export default async function ArtistPage({ params }: { params: Promise<{ id: str
     notFound();
   }
 
+  // 本人が投稿した曲、またはコラボアーティストとして参加した曲をすべて取得
   const { data: songs } = await supabase
     .from("songs")
-    .select("*, profiles(*), likes(user_id), amu_comments(id)")
-    .eq("user_id", id)
+    .select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*), likes(user_id), amu_comments(id)")
+    .or(`user_id.eq.${id},co_artist_id_1.eq.${id},co_artist_id_2.eq.${id}`)
     .order("created_at", { ascending: false });
     
   // ログイン中のユーザー情報を取得
@@ -57,15 +59,15 @@ export default async function ArtistPage({ params }: { params: Promise<{ id: str
 
   return (
     <main className="min-h-screen bg-slate-50/50 text-slate-900 pb-32 font-sans">
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center shadow-md">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
-          </div>
-          <h1 className="text-2xl font-black tracking-tighter text-slate-900 uppercase">
-            AMU RECORDS
-          </h1>
-        </Link>
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200 px-4 sm:px-6 py-2 sm:py-3 md:py-3.5 flex justify-between items-center shadow-sm">
+        <div className="flex items-center shrink">
+          <Link href="/" className="relative z-20 block shrink">
+            <img src="/logo.png" alt="AMU RECORDS" className="h-16 sm:h-24 md:h-32 w-auto max-w-[240px] sm:max-w-none object-contain cursor-pointer hover:opacity-80 transition-opacity" />
+          </Link>
+        </div>
+        <div className="shrink-0 relative z-20 pl-2">
+          <AuthButton user={user} />
+        </div>
       </header>
 
       <div className="max-w-4xl mx-auto px-6 py-12">

@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: SongPageProps): Promise<Metad
 
   const { data: song } = await supabase
     .from("songs")
-    .select("*, profiles(*)")
+    .select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*)")
     .eq("id", id)
     .single();
 
@@ -29,7 +29,12 @@ export async function generateMetadata({ params }: SongPageProps): Promise<Metad
     };
   }
 
-  const artistName = song.profiles?.artist_name || song.artist || "Unknown Artist";
+  const artists = [
+    song.profiles?.artist_name,
+    song.co_artist_1?.artist_name,
+    song.co_artist_2?.artist_name,
+  ].filter(Boolean);
+  const artistName = artists.length > 0 ? artists.join(" × ") : (song.artist || "Unknown Artist");
   const title = `${song.title} - ${artistName} | AMU RECORDS`;
   const description =
     song.description ||
@@ -61,7 +66,7 @@ export default async function SongPage({ params }: SongPageProps) {
   // 楽曲情報の取得
   const { data: song } = await supabase
     .from("songs")
-    .select("*, profiles(*), likes(user_id), amu_comments(id)")
+    .select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*), likes(user_id), amu_comments(id)")
     .eq("id", id)
     .single();
 
@@ -76,11 +81,11 @@ export default async function SongPage({ params }: SongPageProps) {
   const likeCount = song.likes?.length || 0;
   const commentCount = song.amu_comments?.length || 0;
 
-  // このアーティストの他の楽曲
+  // このアーティストの他の楽曲（メイン投稿またはコラボ参加）
   const { data: artistSongs } = await supabase
     .from("songs")
-    .select("*, profiles(*), likes(user_id), amu_comments(id)")
-    .eq("user_id", song.user_id)
+    .select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*), likes(user_id), amu_comments(id)")
+    .or(`user_id.eq.${song.user_id},co_artist_id_1.eq.${song.user_id},co_artist_id_2.eq.${song.user_id}`)
     .neq("id", song.id)
     .order("created_at", { ascending: false })
     .limit(4);
@@ -90,7 +95,7 @@ export default async function SongPage({ params }: SongPageProps) {
   if (!artistSongs || artistSongs.length === 0) {
     const { data: popular } = await supabase
       .from("songs")
-      .select("*, profiles(*), likes(user_id), amu_comments(id)")
+      .select("*, profiles(*), co_artist_1:profiles!co_artist_id_1(*), co_artist_2:profiles!co_artist_id_2(*), likes(user_id), amu_comments(id)")
       .neq("id", song.id)
       .order("play_count", { ascending: false })
       .limit(4);

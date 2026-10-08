@@ -82,8 +82,16 @@ export default function TrackList({
     <div className="space-y-3 sm:space-y-4">
       <div className="grid gap-3 sm:gap-4">
         {displayedSongs.map((song, index) => {
-          const profile = song.profiles;
-          const artistName = profile?.artist_name || song.artist || "Unknown Artist";
+          const artists = [
+            song.profiles ? { ...song.profiles, id: song.user_id } : null,
+            song.co_artist_1 ? { ...song.co_artist_1, id: song.co_artist_id_1 || song.co_artist_1.id } : null,
+            song.co_artist_2 ? { ...song.co_artist_2, id: song.co_artist_id_2 || song.co_artist_2.id } : null,
+          ].filter(Boolean);
+
+          const artistName = artists.length > 0 
+            ? artists.map((a: any) => a.artist_name).join(" × ") 
+            : (song.artist || "Unknown Artist");
+
           const isThisPlaying = currentSong?.id === song.id && isPlaying;
           const likeData = likesState[song.id] || { count: 0, isLiked: false };
 
@@ -131,15 +139,47 @@ export default function TrackList({
                     {song.title}
                   </Link>
                 </h3>
-                {profile ? (
-                  <Link href={`/artist/${song.user_id}`} className="inline-flex items-center gap-1.5 group/artist max-w-full">
-                    <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full overflow-hidden bg-slate-100 border border-slate-200 shrink-0">
-                      {profile.avatar_url && <img src={profile.avatar_url} alt="avatar" className="w-full h-full object-cover" />}
+                {artists.length > 0 ? (
+                  <div className="flex items-center gap-1.5 flex-wrap max-w-full">
+                    {/* 重なりアバターアイコン */}
+                    <div className="flex -space-x-1.5 overflow-hidden shrink-0">
+                      {artists.map((a: any, i: number) => (
+                        <Link 
+                          key={a.id || i} 
+                          href={`/artist/${a.id}`} 
+                          title={a.artist_name}
+                          className="relative z-10 hover:z-20 transition-transform hover:scale-110 block"
+                        >
+                          <div className="w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full overflow-hidden bg-slate-100 border border-white shadow-xs">
+                            {a.avatar_url ? (
+                              <img src={a.avatar_url} alt={a.artist_name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full bg-slate-200 flex items-center justify-center text-[7px] font-bold text-slate-600">
+                                {a.artist_name?.[0] || "?"}
+                              </div>
+                            )}
+                          </div>
+                        </Link>
+                      ))}
                     </div>
-                    <p className="text-xs sm:text-sm font-semibold text-slate-500 group-hover/artist:text-slate-900 transition-colors truncate">
-                      {artistName}
-                    </p>
-                  </Link>
+
+                    {/* アーティスト名連名リンク (A × B × C) */}
+                    <div className="flex items-center flex-wrap gap-1 text-xs sm:text-sm font-semibold text-slate-500 min-w-0">
+                      {artists.map((a: any, i: number) => (
+                        <span key={a.id || i} className="inline-flex items-center max-w-full">
+                          <Link 
+                            href={`/artist/${a.id}`} 
+                            className="hover:text-slate-900 hover:underline transition-colors truncate max-w-[120px] sm:max-w-[200px]"
+                          >
+                            {a.artist_name}
+                          </Link>
+                          {i < artists.length - 1 && (
+                            <span className="mx-1 text-indigo-500 font-bold select-none text-[11px] sm:text-xs">×</span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 ) : (
                   <p className="text-xs sm:text-sm font-semibold text-slate-500 truncate">{artistName}</p>
                 )}

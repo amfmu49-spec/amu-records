@@ -28,7 +28,16 @@ export default function SongDetailHero({
   const [copied, setCopied] = useState(false);
 
   const isThisPlaying = currentSong?.id === song.id && isPlaying;
-  const artistName = song.profiles?.artist_name || song.artist || "Unknown Artist";
+
+  const artists = [
+    song.profiles ? { ...song.profiles, id: song.user_id } : null,
+    song.co_artist_1 ? { ...song.co_artist_1, id: song.co_artist_id_1 || song.co_artist_1.id } : null,
+    song.co_artist_2 ? { ...song.co_artist_2, id: song.co_artist_id_2 || song.co_artist_2.id } : null,
+  ].filter(Boolean);
+
+  const artistName = artists.length > 0 
+    ? artists.map((a: any) => a.artist_name).join(" × ") 
+    : (song.artist || "Unknown Artist");
 
   const handlePlayToggle = () => {
     playSong({
@@ -143,28 +152,39 @@ export default function SongDetailHero({
             {song.title}
           </h1>
 
-          {/* アーティストチップ */}
-          <div className="flex items-center justify-center md:justify-start gap-3 mb-6">
-            <Link
-              href={`/artist/${song.user_id}`}
-              className="inline-flex items-center gap-2.5 bg-white/10 hover:bg-white/20 active:scale-95 px-3.5 py-1.5 rounded-full backdrop-blur-md transition-all group"
-            >
-              <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-700 shrink-0 border border-white/20">
-                {song.profiles?.avatar_url ? (
-                  <img src={song.profiles.avatar_url} alt={artistName} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-[10px] text-white font-bold">
-                    {artistName.slice(0, 1)}
-                  </div>
-                )}
-              </div>
-              <span className="text-sm sm:text-base font-semibold text-slate-200 group-hover:text-white transition-colors truncate">
-                {artistName}
-              </span>
-              <svg className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
+          {/* アーティストチップ（複数連名対応） */}
+          <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-6">
+            {artists.length > 0 ? (
+              artists.map((a: any, i: number) => (
+                <div key={a.id || i} className="inline-flex items-center gap-2">
+                  <Link
+                    href={`/artist/${a.id}`}
+                    className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 active:scale-95 px-3 py-1.5 rounded-full backdrop-blur-md transition-all group"
+                  >
+                    <div className="w-6 h-6 rounded-full overflow-hidden bg-slate-700 shrink-0 border border-white/20">
+                      {a.avatar_url ? (
+                        <img src={a.avatar_url} alt={a.artist_name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[10px] text-white font-bold">
+                          {a.artist_name?.slice(0, 1) || "?"}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs sm:text-sm font-semibold text-slate-200 group-hover:text-white transition-colors truncate max-w-[140px] sm:max-w-[200px]">
+                      {a.artist_name}
+                    </span>
+                    <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </Link>
+                  {i < artists.length - 1 && (
+                    <span className="text-indigo-400 font-bold select-none text-sm px-0.5">×</span>
+                  )}
+                </div>
+              ))
+            ) : (
+              <span className="text-sm font-semibold text-slate-300">{artistName}</span>
+            )}
           </div>
 
           {/* メタ統計情報 */}

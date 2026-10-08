@@ -9,7 +9,16 @@ export default function HeroPlayer({ song }: { song: any }) {
   if (!song) return null;
 
   const isThisPlaying = currentSong?.id === song.id && isPlaying;
-  const artistName = song.profiles?.artist_name || song.artist || "Unknown Artist";
+
+  const artists = [
+    song.profiles ? { ...song.profiles, id: song.user_id } : null,
+    song.co_artist_1 ? { ...song.co_artist_1, id: song.co_artist_id_1 || song.co_artist_1.id } : null,
+    song.co_artist_2 ? { ...song.co_artist_2, id: song.co_artist_id_2 || song.co_artist_2.id } : null,
+  ].filter(Boolean);
+
+  const artistName = artists.length > 0 
+    ? artists.map((a: any) => a.artist_name).join(" × ") 
+    : (song.artist || "Unknown Artist");
 
   const handlePlay = () => {
     playSong({
@@ -64,12 +73,47 @@ export default function HeroPlayer({ song }: { song: any }) {
           </Link>
         </h2>
         
-        <Link href={`/artist/${song.user_id}`} className="inline-flex items-center gap-2.5 hover:opacity-80 active:opacity-60 transition-opacity mb-6">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-slate-700">
-            {song.profiles?.avatar_url && <img src={song.profiles.avatar_url} alt="avatar" className="w-full h-full object-cover" />}
-          </div>
-          <p className="text-base sm:text-xl text-slate-300 font-medium truncate">{artistName}</p>
-        </Link>
+        {/* アーティスト情報（複数連名対応） */}
+        <div className="flex items-center justify-center md:justify-start gap-3 flex-wrap mb-6">
+          {artists.length > 0 ? (
+            <>
+              <div className="flex -space-x-2 overflow-hidden shrink-0">
+                {artists.map((a: any, i: number) => (
+                  <Link 
+                    key={a.id || i} 
+                    href={`/artist/${a.id}`} 
+                    title={a.artist_name}
+                    className="relative z-10 hover:z-20 transition-transform hover:scale-110 block"
+                  >
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-slate-700 border-2 border-slate-900 shadow-md">
+                      {a.avatar_url ? (
+                        <img src={a.avatar_url} alt={a.artist_name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-slate-800 text-[10px] font-bold text-slate-300">
+                          {a.artist_name?.[0] || "?"}
+                        </div>
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+              <div className="flex items-center flex-wrap gap-1 text-base sm:text-xl text-slate-300 font-medium">
+                {artists.map((a: any, i: number) => (
+                  <span key={a.id || i} className="inline-flex items-center">
+                    <Link href={`/artist/${a.id}`} className="hover:text-white hover:underline transition-colors">
+                      {a.artist_name}
+                    </Link>
+                    {i < artists.length - 1 && (
+                      <span className="mx-1.5 text-indigo-400 font-bold select-none text-sm sm:text-base">×</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-base sm:text-xl text-slate-300 font-medium">{artistName}</p>
+          )}
+        </div>
         
         {song.description && (
           <p className="text-slate-400 line-clamp-2 leading-relaxed max-w-xl hidden sm:block mb-8">

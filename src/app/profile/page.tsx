@@ -21,6 +21,7 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [hasProfile, setHasProfile] = useState(false);
+  const [availableArtists, setAvailableArtists] = useState<any[]>([]);
   
   const router = useRouter();
   const supabase = createClient();
@@ -54,6 +55,16 @@ export default function ProfilePage() {
       } else {
         // デフォルト名
         setArtistName(user.user_metadata?.full_name || "New Artist");
+      }
+
+      // 他の登録アーティスト一覧の取得（コラボ選択用）
+      const { data: otherProfiles } = await supabase
+        .from("profiles")
+        .select("id, artist_name, avatar_url")
+        .neq("id", user.id)
+        .order("created_at", { ascending: false });
+      if (otherProfiles) {
+        setAvailableArtists(otherProfiles);
       }
 
       // 過去曲の取得
@@ -152,6 +163,8 @@ export default function ProfilePage() {
   const [editingSongId, setEditingSongId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editCoArtist1, setEditCoArtist1] = useState("");
+  const [editCoArtist2, setEditCoArtist2] = useState("");
 
   const handleDeleteSong = async (songId: string) => {
     if (!user) return;
@@ -173,6 +186,8 @@ export default function ProfilePage() {
     setEditingSongId(song.id);
     setEditTitle(song.title);
     setEditDescription(song.description || "");
+    setEditCoArtist1(song.co_artist_id_1 || "");
+    setEditCoArtist2(song.co_artist_id_2 || "");
   };
 
   const handleUpdateSong = async (songId: string) => {
@@ -185,14 +200,25 @@ export default function ProfilePage() {
     // 本人の曲のみ更新 (user_id = user.id)
     const { error } = await supabase
       .from("songs")
-      .update({ title: editTitle.trim(), description: editDescription.trim() })
+      .update({
+        title: editTitle.trim(),
+        description: editDescription.trim(),
+        co_artist_id_1: editCoArtist1 || null,
+        co_artist_id_2: editCoArtist2 || null,
+      })
       .eq("id", songId)
       .eq("user_id", user.id);
 
     if (error) {
       alert("更新に失敗しました: " + error.message);
     } else {
-      setMySongs(mySongs.map(s => s.id === songId ? { ...s, title: editTitle.trim(), description: editDescription.trim() } : s));
+      setMySongs(mySongs.map(s => s.id === songId ? {
+        ...s,
+        title: editTitle.trim(),
+        description: editDescription.trim(),
+        co_artist_id_1: editCoArtist1 || null,
+        co_artist_id_2: editCoArtist2 || null,
+      } : s));
       setEditingSongId(null);
     }
   };
@@ -308,6 +334,44 @@ export default function ProfilePage() {
                         <label className="block text-xs font-bold text-slate-500 mb-1">概要・キャプション</label>
                         <textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 h-20 resize-none" />
                       </div>
+                      
+                      {/* コラボアーティスト編集 */}
+                      <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                        <label className="block text-xs font-bold text-slate-700">コラボアーティスト設定 (最大2名)</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div>
+                            <span className="block text-[11px] text-slate-500 mb-0.5">コラボ相手 1</span>
+                            <select
+                              value={editCoArtist1}
+                              onChange={e => setEditCoArtist1(e.target.value)}
+                              className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-200 bg-slate-50"
+                            >
+                              <option value="">なし</option>
+                              {availableArtists.map(a => (
+                                <option key={a.id} value={a.id} disabled={a.id === editCoArtist2}>
+                                  {a.artist_name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <span className="block text-[11px] text-slate-500 mb-0.5">コラボ相手 2</span>
+                            <select
+                              value={editCoArtist2}
+                              onChange={e => setEditCoArtist2(e.target.value)}
+                              className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-200 bg-slate-50"
+                            >
+                              <option value="">なし</option>
+                              {availableArtists.map(a => (
+                                <option key={a.id} value={a.id} disabled={a.id === editCoArtist1}>
+                                  {a.artist_name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="flex items-center gap-2 pt-2">
                         <button onClick={() => handleUpdateSong(song.id)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-colors">
                           保存
@@ -323,6 +387,15 @@ export default function ProfilePage() {
                         <Link href={`/song/${song.id}`} className="font-bold text-slate-800 hover:text-indigo-600 hover:underline truncate block">
                           {song.title}
                         </Link>
+                        {(song.co_artist_id_1 || song.co_artist_id_2) && (
+                          <div className="flex items-center gap-1.5 mt-1 text-xs text-indigo-600 font-semibold flex-wrap">
+                            <span className="bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md text-[11px]">
+                              コラボ: {artistName}
+                              {song.co_artist_id_1 && ` × ${availableArtists.find(a => a.id === song.co_artist_id_1)?.artist_name || '参加者'}`}
+                              {song.co_artist_id_2 && ` × ${availableArtists.find(a => a.id === song.co_artist_id_2)?.artist_name || '参加者'}`}
+                            </span>
+                          </div>
+                        )}
                         {song.description && (
                           <p className="text-xs text-slate-500 mt-1 line-clamp-2">{song.description}</p>
                         )}

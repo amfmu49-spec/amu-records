@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
@@ -13,12 +13,29 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
   const [isUploading, setIsUploading] = useState(false);
   const [message, setMessage] = useState("");
   
+  // コラボアーティストの状態（最大3人：自分＋2名）
+  const [availableArtists, setAvailableArtists] = useState<Array<{ id: string; artist_name: string; avatar_url: string | null }>>([]);
+  const [coArtist1, setCoArtist1] = useState("");
+  const [coArtist2, setCoArtist2] = useState("");
+
   // 著作権同意モーダルの状態
   const [showCopyrightModal, setShowCopyrightModal] = useState(false);
   const [isAgreed, setIsAgreed] = useState(false);
 
   const router = useRouter();
   const supabase = createClient();
+
+  // 他の参加アーティスト一覧を取得
+  useEffect(() => {
+    supabase
+      .from("profiles")
+      .select("id, artist_name, avatar_url")
+      .neq("id", userId)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        if (data) setAvailableArtists(data);
+      });
+  }, [userId]);
 
   const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
   const MAX_COVER_SIZE = 5 * 1024 * 1024; // 5MB
@@ -136,6 +153,8 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
         file_url: songUrl,
         cover_url: coverUrl,
         user_id: userId,
+        co_artist_id_1: coArtist1 || null,
+        co_artist_id_2: coArtist2 || null,
       }]);
 
       if (dbError) throw dbError;
@@ -145,6 +164,8 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
       setCoverFile(null);
       setTitle("");
       setDescription("");
+      setCoArtist1("");
+      setCoArtist2("");
       router.refresh();
     } catch (err: any) {
       setMessage(`エラー: ${err.message}`);
@@ -208,6 +229,86 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2">曲のタイトル <span className="text-red-500">*</span></label>
             <input type="text" maxLength={100} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="タイトルを入力 (100文字以内)" className="w-full px-4 sm:px-5 py-3 sm:py-3.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 transition-all text-sm sm:text-base" required disabled={isUploading} />
+          </div>
+
+          {/* コラボアーティスト設定（最大3人：投稿者＋2名） */}
+          <div className="bg-slate-50/80 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-bold text-slate-800 flex items-center gap-2">
+                <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                コラボアーティスト (任意・最大2名追加可能)
+              </label>
+              <span className="text-[11px] text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full font-bold border border-indigo-100">
+                最大3人連名
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              他の登録アーティストとコラボした場合、選択すると「A × B × C」としてクレジットされ、それぞれのアーティストページにも楽曲が表示されます。
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">コラボ相手 1</label>
+                <select
+                  value={coArtist1}
+                  onChange={(e) => setCoArtist1(e.target.value)}
+                  disabled={isUploading}
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">なし（単独作品）</option>
+                  {availableArtists.map((a) => (
+                    <option key={a.id} value={a.id} disabled={a.id === coArtist2}>
+                      {a.artist_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">コラボ相手 2</label>
+                <select
+                  value={coArtist2}
+                  onChange={(e) => setCoArtist2(e.target.value)}
+                  disabled={isUploading}
+                  className="w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">なし</option>
+                  {availableArtists.map((a) => (
+                    <option key={a.id} value={a.id} disabled={a.id === coArtist1}>
+                      {a.artist_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* クレジット表示プレビュー */}
+            {(coArtist1 || coArtist2) && (
+              <div className="bg-white rounded-xl p-3 border border-indigo-100 flex items-center gap-2.5 mt-2">
+                <span className="text-xs font-bold text-slate-500 shrink-0">表示プレビュー:</span>
+                <div className="flex items-center gap-1.5 flex-wrap text-xs sm:text-sm font-bold text-slate-800">
+                  <span className="text-slate-900">{profile.artist_name}</span>
+                  {coArtist1 && (
+                    <>
+                      <span className="text-indigo-500 font-extrabold">×</span>
+                      <span className="text-indigo-700">
+                        {availableArtists.find((a) => a.id === coArtist1)?.artist_name || "アーティスト"}
+                      </span>
+                    </>
+                  )}
+                  {coArtist2 && (
+                    <>
+                      <span className="text-indigo-500 font-extrabold">×</span>
+                      <span className="text-indigo-700">
+                        {availableArtists.find((a) => a.id === coArtist2)?.artist_name || "アーティスト"}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div>
