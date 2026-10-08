@@ -11,22 +11,18 @@ export default async function Home() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  let userProfile = null;
-  if (user) {
-    const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
-    userProfile = data;
-  }
-
-  const { data: songs, error } = await supabase
-    .from("songs")
-    .select("*, profiles(*), likes(user_id)")
-    .order("created_at", { ascending: false });
-
-  const { data: rankedSongs } = await supabase
-    .from("songs")
-    .select("*, profiles(*), likes(user_id)")
-    .order("play_count", { ascending: false })
-    .limit(5);
+  // 並列で統計カウントおよび楽曲データを取得
+  const [
+    { count: songCount },
+    { count: artistCount },
+    { data: songs },
+    { data: rankedSongs }
+  ] = await Promise.all([
+    supabase.from("songs").select("*", { count: "exact", head: true }),
+    supabase.from("profiles").select("*", { count: "exact", head: true }),
+    supabase.from("songs").select("*, profiles(*), likes(user_id)").order("created_at", { ascending: false }),
+    supabase.from("songs").select("*, profiles(*), likes(user_id)").order("play_count", { ascending: false }).limit(5),
+  ]);
 
   // サーバー側でランダムな1曲を選ぶ
   const randomSong = songs && songs.length > 0 ? songs[Math.floor(Math.random() * songs.length)] : null;
@@ -45,6 +41,34 @@ export default async function Home() {
       </header>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12">
+        {/* コミュニティ・楽曲統計バッジ（登録曲数 & 参加アーティスト数） */}
+        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <div className="inline-flex items-center gap-2.5 bg-white/90 backdrop-blur-md border border-slate-200/90 shadow-sm px-4 sm:px-5 py-2 sm:py-2.5 rounded-full hover:shadow-md transition-shadow">
+            <span className="flex h-2.5 w-2.5 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-600"></span>
+            </span>
+            <span className="text-xs sm:text-sm font-semibold text-slate-500">登録楽曲数</span>
+            <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
+              {songCount ?? 0}
+              <span className="text-xs font-bold text-slate-500 ml-1">曲</span>
+            </span>
+          </div>
+
+          <div className="inline-flex items-center gap-2.5 bg-white/90 backdrop-blur-md border border-slate-200/90 shadow-sm px-4 sm:px-5 py-2 sm:py-2.5 rounded-full hover:shadow-md transition-shadow">
+            <span className="w-5 h-5 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </span>
+            <span className="text-xs sm:text-sm font-semibold text-slate-500">参加アーティスト</span>
+            <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
+              {artistCount ?? 0}
+              <span className="text-xs font-bold text-slate-500 ml-1">人</span>
+            </span>
+          </div>
+        </div>
+
         {/* ランダムに選ばれた曲の大型プレイヤー */}
         <HeroPlayer song={randomSong} />
 

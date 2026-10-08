@@ -58,7 +58,11 @@ export default function HeroPlayer({ song }: { song: any }) {
       {/* 曲情報 */}
       <div className="relative z-10 text-center md:text-left flex-1 w-full min-w-0">
         <p className="text-indigo-400 font-bold tracking-widest text-xs sm:text-sm mb-2 uppercase">Featured Track</p>
-        <h2 className="text-2xl sm:text-4xl md:text-5xl font-black text-white tracking-tight mb-3 line-clamp-2 break-words">{song.title}</h2>
+        <h2 className="text-2xl sm:text-4xl md:text-5xl font-black text-white tracking-tight mb-3 line-clamp-2 break-words">
+          <Link href={`/song/${song.id}`} className="hover:underline hover:text-indigo-200 transition-colors">
+            {song.title}
+          </Link>
+        </h2>
         
         <Link href={`/artist/${song.user_id}`} className="inline-flex items-center gap-2.5 hover:opacity-80 active:opacity-60 transition-opacity mb-6">
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-slate-700">
@@ -73,11 +77,11 @@ export default function HeroPlayer({ song }: { song: any }) {
           </p>
         )}
 
-        <div>
+        <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 sm:gap-4">
           <button 
             type="button"
             onClick={handlePlay}
-            className="relative z-20 bg-white hover:bg-slate-100 active:scale-95 text-slate-900 px-7 sm:px-8 py-3.5 sm:py-4 rounded-full font-bold shadow-[0_0_30px_rgba(255,255,255,0.25)] transition-all flex items-center gap-3 mx-auto md:mx-0 select-none cursor-pointer"
+            className="relative z-20 bg-white hover:bg-slate-100 active:scale-95 text-slate-900 px-7 sm:px-8 py-3.5 sm:py-4 rounded-full font-bold shadow-[0_0_30px_rgba(255,255,255,0.25)] transition-all flex items-center gap-3 select-none cursor-pointer"
           >
             {isThisPlaying ? (
               <>
@@ -86,11 +90,19 @@ export default function HeroPlayer({ song }: { song: any }) {
               </>
             ) : (
               <>
-                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <svg className="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                 PLAY NOW
               </>
             )}
           </button>
+
+          <Link
+            href={`/song/${song.id}`}
+            className="relative z-20 bg-white/10 hover:bg-white/20 active:scale-95 text-white border border-white/20 px-5 sm:px-6 py-3.5 sm:py-4 rounded-full font-semibold transition-all flex items-center gap-2 select-none text-xs sm:text-sm backdrop-blur-md cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            楽曲ページを見る
+          </Link>
         </div>
       </div>
     </div>

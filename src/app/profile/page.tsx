@@ -320,13 +320,21 @@ export default function ProfilePage() {
                   ) : (
                     <>
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-slate-800 truncate">{song.title}</p>
+                        <Link href={`/song/${song.id}`} className="font-bold text-slate-800 hover:text-indigo-600 hover:underline truncate block">
+                          {song.title}
+                        </Link>
                         {song.description && (
                           <p className="text-xs text-slate-500 mt-1 line-clamp-2">{song.description}</p>
                         )}
                         <p className="text-[10px] text-slate-400 mt-2">{new Date(song.created_at).toLocaleDateString()}</p>
                       </div>
                       <div className="flex items-start gap-2 shrink-0">
+                        <Link
+                          href={`/song/${song.id}`}
+                          className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors"
+                        >
+                          ページ
+                        </Link>
                         <button 
                           onClick={() => startEditing(song)}
                           className="text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors"
