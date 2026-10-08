@@ -31,3 +31,13 @@ button, a, [role="button"] {
   cursor: pointer;
 }
 
+@keyframes bell-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  20%, 60% { transform: rotate(14deg); }
+  40%, 80% { transform: rotate(-14deg); }
+}
+
+.animate-wiggle {
+  animation: bell-wiggle 1.5s ease-in-out infinite;
+}
+

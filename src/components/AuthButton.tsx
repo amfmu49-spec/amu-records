@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { useState } from "react";
+import NotificationBell from "@/components/NotificationBell";
 
 export default function AuthButton({ user }: { user: User | null }) {
   const supabase = createClient();
@@ -43,7 +44,8 @@ export default function AuthButton({ user }: { user: User | null }) {
 
   if (user) {
     return (
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <NotificationBell />
         <Link 
           href="/profile" 
           className="text-xs sm:text-sm font-bold text-slate-900 bg-slate-100 hover:bg-slate-200 active:scale-95 px-3.5 sm:px-4 py-2 rounded-full transition-all shrink-0"
@@ -63,13 +65,16 @@ export default function AuthButton({ user }: { user: User | null }) {
   }
 
   return (
-    <button 
-      type="button"
-      onClick={handleLogin} 
-      disabled={loading}
-      className="bg-slate-900 hover:bg-slate-800 active:scale-95 text-white px-4 sm:px-6 py-2 sm:py-2.5 rounded-full transition-all text-xs sm:text-sm font-semibold shadow-md flex items-center gap-2 shrink-0 disabled:opacity-50 select-none cursor-pointer"
-    >
-      {loading ? "接続中..." : "Googleでログイン"}
-    </button>
+    <div className="flex items-center gap-2 sm:gap-3">
+      <NotificationBell />
+      <button 
+        type="button"
+        onClick={handleLogin} 
+        disabled={loading}
+        className="bg-slate-900 hover:bg-slate-800 active:scale-95 text-white px-4 sm:px-6 py-2 sm:py-2.5 rounded-full transition-all text-xs sm:text-sm font-semibold shadow-md flex items-center gap-2 shrink-0 disabled:opacity-50 select-none cursor-pointer"
+      >
+        {loading ? "接続中..." : "Googleでログイン"}
+      </button>
+    </div>
   );
 }

@@ -24,6 +24,17 @@ export default function ProfilePage() {
   const [message, setMessage] = useState("");
   const [hasProfile, setHasProfile] = useState(false);
   const [availableArtists, setAvailableArtists] = useState<any[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  
+  // 管理者お知らせ送信state
+  const [adminTitle, setAdminTitle] = useState("");
+  const [adminContent, setAdminContent] = useState("");
+  const [adminCategory, setAdminCategory] = useState<"update" | "notice" | "event" | "maintenance">("update");
+  const [adminLinkUrl, setAdminLinkUrl] = useState("");
+  const [adminIsPinned, setAdminIsPinned] = useState(false);
+  const [adminSending, setAdminSending] = useState(false);
+  const [adminPasscode, setAdminPasscode] = useState("");
+  const [showAdminPassInput, setShowAdminPassInput] = useState(false);
   
   const router = useRouter();
   const supabase = createClient();
@@ -46,6 +57,7 @@ export default function ProfilePage() {
       if (profile) {
         setHasProfile(true);
         setRole(profile.role === "listener" ? "listener" : "creator");
+        setIsAdmin(!!profile.is_admin);
         setArtistName(profile.artist_name || "");
         setTiktokUrl(profile.tiktok_url || "");
         setYoutubeUrl(profile.youtube_url || "");
@@ -185,6 +197,72 @@ export default function ProfilePage() {
     // UIを更新
     setMySongs(mySongs.filter(s => s.id !== songId));
     alert("曲を削除しました。");
+  };
+
+  const handleBroadcastAnnouncement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminTitle.trim() || !adminContent.trim()) {
+      alert("タイトルと本文を入力してください");
+      return;
+    }
+
+    try {
+      setAdminSending(true);
+      const { error } = await supabase.from("announcements").insert([
+        {
+          title: adminTitle.trim(),
+          content: adminContent.trim(),
+          category: adminCategory,
+          link_url: adminLinkUrl.trim() || null,
+          is_pinned: adminIsPinned,
+          created_by: user?.id,
+        },
+      ]);
+
+      if (error) {
+        alert("配信に失敗しました: " + error.message);
+        return;
+      }
+
+      alert("🎉 全ユーザーへお知らせ・アップデートを一斉送信しました！");
+      setAdminTitle("");
+      setAdminContent("");
+      setAdminLinkUrl("");
+      setAdminIsPinned(false);
+    } catch (err: any) {
+      alert("エラー: " + (err?.message || err));
+    } finally {
+      setAdminSending(false);
+    }
+  };
+
+  const handleActivateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPasscode.trim() !== "amu2026" && adminPasscode.trim() !== "amurecords") {
+      alert("管理者パスコードが正しくありません");
+      return;
+    }
+
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ is_admin: true })
+        .eq("id", user.id);
+
+      if (error) {
+        alert("有効化に失敗しました: " + error.message);
+        return;
+      }
+
+      setIsAdmin(true);
+      setShowAdminPassInput(false);
+      setAdminPasscode("");
+      alert("👑 管理者モード（俺）が有効化されました！お知らせを一斉配信できます。");
+    } catch (err: any) {
+      alert("エラー: " + (err?.message || err));
+    }
   };
 
   const startEditing = (song: any) => {
@@ -539,6 +617,154 @@ export default function ProfilePage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* 管理者専用: お知らせ・アップデート一斉送信セクション */}
+        {isAdmin ? (
+          <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 border border-slate-800 shadow-xl mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <span className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center text-xl">
+                  📢
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold">全ユーザーへお知らせを一斉送信</h3>
+                    <span className="text-[10px] bg-amber-400 text-slate-900 font-extrabold px-2 py-0.5 rounded-full">
+                      管理者モード
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    ここに投稿した内容は、サイト右上ベルマーク（🔔）を通じて全訪問者へ即時配信されます。
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleBroadcastAnnouncement} className="space-y-4 pt-2">
+              {/* カテゴリ選択 */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-2">カテゴリ</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { key: "update", label: "アップデート", icon: "🚀" },
+                    { key: "notice", label: "お知らせ", icon: "📢" },
+                    { key: "event", label: "イベント", icon: "🎉" },
+                    { key: "maintenance", label: "メンテナンス", icon: "🛠" },
+                  ].map((cat) => (
+                    <button
+                      key={cat.key}
+                      type="button"
+                      onClick={() => setAdminCategory(cat.key as any)}
+                      className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border ${
+                        adminCategory === cat.key
+                          ? "bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/30"
+                          : "bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                      }`}
+                    >
+                      <span>{cat.icon}</span>
+                      <span>{cat.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* タイトル */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">タイトル</label>
+                <input
+                  type="text"
+                  placeholder="例: 新機能：コラボ機能とロール設定をリリースしました！"
+                  value={adminTitle}
+                  onChange={(e) => setAdminTitle(e.target.value)}
+                  className="w-full px-4 py-2.5 text-sm rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  required
+                />
+              </div>
+
+              {/* 本文 */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">本文内容</label>
+                <textarea
+                  placeholder="ユーザーに伝えたいアップデート情報やメッセージを入力してください（改行もそのまま反映されます）"
+                  value={adminContent}
+                  onChange={(e) => setAdminContent(e.target.value)}
+                  className="w-full px-4 py-2.5 text-sm rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 h-28 resize-none leading-relaxed"
+                  required
+                />
+              </div>
+
+              {/* リンクURL */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">リンクURL（任意）</label>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={adminLinkUrl}
+                  onChange={(e) => setAdminLinkUrl(e.target.value)}
+                  className="w-full px-4 py-2 text-sm rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* ピン留めチェック */}
+              <label className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={adminIsPinned}
+                  onChange={(e) => setAdminIsPinned(e.target.checked)}
+                  className="rounded border-slate-700 bg-slate-800 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                />
+                <span className="font-bold">先頭に固定表示する 📌</span>
+              </label>
+
+              {/* 一斉送信ボタン */}
+              <button
+                type="submit"
+                disabled={adminSending}
+                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white font-black text-sm rounded-xl transition-all shadow-xl shadow-indigo-600/30 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {adminSending ? "配信処理中..." : "🚀 今すぐ全ユーザーへ一斉送信する"}
+              </button>
+            </form>
+          </div>
+        ) : (
+          <div className="mt-8 text-center">
+            {showAdminPassInput ? (
+              <form onSubmit={handleActivateAdmin} className="inline-flex flex-col sm:flex-row items-center gap-2 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm max-w-md w-full mx-auto">
+                <input
+                  type="password"
+                  placeholder="管理者パスコードを入力"
+                  value={adminPasscode}
+                  onChange={(e) => setAdminPasscode(e.target.value)}
+                  className="w-full sm:flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  autoFocus
+                />
+                <div className="flex gap-1.5 w-full sm:w-auto">
+                  <button
+                    type="submit"
+                    className="flex-1 sm:flex-none px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-slate-800 cursor-pointer"
+                  >
+                    認証
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminPassInput(false)}
+                    className="flex-1 sm:flex-none px-3 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-200 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAdminPassInput(true)}
+                className="text-xs text-slate-400 hover:text-slate-600 transition-colors underline cursor-pointer"
+              >
+                👑 サイト管理者としてお知らせを配信する
+              </button>
+            )}
           </div>
         )}
       </div>
