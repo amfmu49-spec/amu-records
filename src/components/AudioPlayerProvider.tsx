@@ -468,9 +468,15 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
 
   // 手動スキップ（次の曲へ）
   const playNextSong = useCallback(() => {
-    const next = pickNextRandomSong();
-    if (next) {
+    if (isRandomRef.current && nextSongRef.current) {
+      const next = nextSongRef.current;
+      nextSongRef.current = null;
       transitionToSong(next);
+    } else {
+      const next = pickNextRandomSong();
+      if (next) {
+        transitionToSong(next);
+      }
     }
   }, [pickNextRandomSong, transitionToSong]);
 
@@ -610,9 +616,15 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         if (activeDeckRef.current === deckName) {
           if (isRandomRef.current) {
             if (!isFadingRef.current) {
-              const next = pickNextRandomSong();
-              if (next) {
+              if (nextSongRef.current) {
+                const next = nextSongRef.current;
+                nextSongRef.current = null;
                 transitionToSong(next);
+              } else {
+                const next = pickNextRandomSong();
+                if (next) {
+                  transitionToSong(next);
+                }
               }
             }
           } else {
