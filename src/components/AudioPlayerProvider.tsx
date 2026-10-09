@@ -154,8 +154,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     return pool[Math.floor(Math.random() * pool.length)];
   }, [currentSong]);
 
-  // クロスフェードの実行（※次の曲の音声ロードが完了し、実際に鳴り始めてからフェードを行うことで「ぶつ切り」を完全防止）
-  const executeCrossfade = useCallback((nextSong: Song, durationMs = 1500) => {
+  // --- 自動進行時の本格的クロスフェード（曲終了前2.5秒間） ---
+  const executeAutoCrossfade = useCallback((nextSong: Song) => {
     if (isFadingRef.current) return;
 
     const currentDeck = activeDeckRef.current;
@@ -173,42 +173,41 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     isFadingRef.current = true;
     setIsCrossfading(true);
 
-    // 次の曲のソースをセットし、まずは音量0でロード＆再生準備
+    // 次の曲のソースをセット
     nextAudio.src = nextSong.file_url;
     nextAudio.volume = 0;
     nextAudio.currentTime = 0;
 
-    let hasStartedFading = false;
+    let fadeStarted = false;
 
-    // 次の曲が実際に再生開始された瞬間にフェードを開始する関数
-    const startFadingProcess = () => {
-      if (hasStartedFading) return;
-      hasStartedFading = true;
+    const startFading = () => {
+      if (fadeStarted) return;
+      fadeStarted = true;
 
-      // UIを更新
       setCurrentSong(nextSong);
       setProgress(0);
       setCurrentTime(0);
 
       incrementPlayCount(nextSong.id);
 
-      const STEPS = Math.max(15, Math.floor(durationMs / 30));
-      const stepInterval = durationMs / STEPS;
+      const DURATION_MS = 2500; // 2.5秒間の滑らかなフェード
+      const STEPS = 50; // 50msごとに滑らかに更新
+      const stepInterval = DURATION_MS / STEPS;
       let step = 0;
 
       fadeIntervalRef.current = setInterval(() => {
         step++;
         const ratio = Math.min(1, step / STEPS);
 
-        // Equal Power カーブ (音量の谷間・引っ込みを防止)
-        const outVolume = Math.cos(ratio * 0.5 * Math.PI); // 1.0 -> 0.0
-        const inVolume = Math.sin(ratio * 0.5 * Math.PI);  // 0.0 -> 1.0
+        // 自然な指数減衰・立ち上がりカーブ（自然にサーッと音が消えて重なる）
+        const outVolume = Math.max(0, Math.pow(1 - ratio, 1.4));
+        const inVolume = Math.min(1, Math.pow(ratio, 1.4));
 
         if (currentAudio) {
-          currentAudio.volume = Math.max(0, Math.min(1, outVolume));
+          try { currentAudio.volume = outVolume; } catch {}
         }
         if (nextAudio) {
-          nextAudio.volume = Math.max(0, Math.min(1, inVolume));
+          try { nextAudio.volume = inVolume; } catch {}
         }
 
         if (step >= STEPS) {
@@ -236,35 +235,31 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       }, stepInterval);
     };
 
-    // 次の曲が再生開始（playing）されたらフェード開始
     const onPlaying = () => {
       nextAudio.removeEventListener("playing", onPlaying);
-      startFadingProcess();
+      startFading();
     };
     nextAudio.addEventListener("playing", onPlaying);
 
     const playPromise = nextAudio.play();
     if (playPromise !== undefined) {
-      playPromise.catch((err) => {
-        console.warn("Crossfade target play error:", err);
-        // エラー時はフォールバック
+      playPromise.catch(() => {
         nextAudio.removeEventListener("playing", onPlaying);
         isFadingRef.current = false;
         setIsCrossfading(false);
       });
     }
 
-    // セーフティタイムアウト: もしネットワーク遅延で800ms以内にplayingが来なかった場合でも強制開始
     setTimeout(() => {
-      if (!hasStartedFading) {
+      if (!fadeStarted) {
         nextAudio.removeEventListener("playing", onPlaying);
-        startFadingProcess();
+        startFading();
       }
-    }, 800);
+    }, 600);
   }, []);
 
-  // 直接曲切り替え
-  const playDirect = useCallback((song: Song) => {
+  // --- 手動スキップ / 曲変更（ノイズのない極めて快適なクイックトランジション） ---
+  const transitionToSong = useCallback((song: Song) => {
     if (fadeIntervalRef.current) {
       clearInterval(fadeIntervalRef.current);
       fadeIntervalRef.current = null;
@@ -272,26 +267,43 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     isFadingRef.current = false;
     setIsCrossfading(false);
 
-    const deck = activeDeckRef.current;
-    const otherDeck = deck === "A" ? "B" : "A";
-    const activeAudio = deck === "A" ? audioRefA.current : audioRefB.current;
-    const otherAudio = otherDeck === "A" ? audioRefA.current : audioRefB.current;
+    const currentDeck = activeDeckRef.current;
+    const nextDeck = currentDeck === "A" ? "B" : "A";
+    const currentAudio = currentDeck === "A" ? audioRefA.current : audioRefB.current;
+    const nextAudio = nextDeck === "A" ? audioRefA.current : audioRefB.current;
 
-    if (otherAudio) {
-      otherAudio.pause();
-      otherAudio.currentTime = 0;
-      otherAudio.volume = 1;
+    // 前の曲を100msでスッと自然にフェードアウトさせてブツ切りノイズを完全防止
+    if (currentAudio && !currentAudio.paused) {
+      const fadeSteps = 5;
+      let s = 0;
+      const quickFade = setInterval(() => {
+        s++;
+        try {
+          currentAudio.volume = Math.max(0, 1 - (s / fadeSteps));
+        } catch {}
+        if (s >= fadeSteps) {
+          clearInterval(quickFade);
+          currentAudio.pause();
+          currentAudio.currentTime = 0;
+          currentAudio.volume = 1;
+        }
+      }, 20);
     }
 
-    if (activeAudio) {
-      activeAudio.src = song.file_url;
-      activeAudio.volume = 1;
-      activeAudio.currentTime = 0;
-      activeAudio.play().catch((e) => console.warn("Play direct error:", e));
+    // 次の曲を再生
+    if (nextAudio) {
+      nextAudio.src = song.file_url;
+      nextAudio.volume = 1;
+      nextAudio.currentTime = 0;
+      nextAudio.play().catch((e) => console.warn("Next play error:", e));
     }
 
+    activeDeckRef.current = nextDeck;
     setCurrentSong(song);
     setIsPlaying(true);
+    setProgress(0);
+    setCurrentTime(0);
+
     incrementPlayCount(song.id);
 
     historyRef.current.push(song.id);
@@ -312,8 +324,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       return;
     }
 
-    playDirect(normalized);
-  }, [currentSong, playDirect, setPlaylist]);
+    transitionToSong(normalized);
+  }, [currentSong, transitionToSong, setPlaylist]);
 
   // ランダム再生の開始
   const startRandomPlay = useCallback((songs: any[]) => {
@@ -327,16 +339,16 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     isRandomRef.current = true;
 
     const firstSong = normalizedList[Math.floor(Math.random() * normalizedList.length)];
-    playDirect(firstSong);
-  }, [playDirect]);
+    transitionToSong(firstSong);
+  }, [transitionToSong]);
 
-  // 手動スキップ: 次の曲が実際に鳴り始めてから0.8秒で滑らかにフェード
+  // 手動スキップ（次の曲へ）
   const playNextSong = useCallback(() => {
     const next = pickNextRandomSong();
     if (next) {
-      executeCrossfade(next, 800);
+      transitionToSong(next);
     }
-  }, [pickNextRandomSong, executeCrossfade]);
+  }, [pickNextRandomSong, transitionToSong]);
 
   // 前の曲へ戻る
   const playPrevSong = useCallback(() => {
@@ -345,12 +357,12 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       const prevId = historyRef.current.pop();
       const prevSong = playlistRef.current.find((s) => s.id === prevId);
       if (prevSong) {
-        playDirect(prevSong);
+        transitionToSong(prevSong);
         return;
       }
     }
     playNextSong();
-  }, [playDirect, playNextSong]);
+  }, [transitionToSong, playNextSong]);
 
   // 再生 / 一時停止の切り替え
   const togglePlay = useCallback(() => {
@@ -384,7 +396,6 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     const activeAudio = activeDeckRef.current === "A" ? audioRefA.current : audioRefB.current;
     if (!activeAudio || !activeAudio.duration) return;
 
-    // ポインターキャプチャで要素外に指が出ても追従
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     setIsDragging(true);
 
@@ -434,13 +445,13 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
               setProgress((audio.currentTime / audio.duration) * 100 || 0);
             }
 
-            // ランダム再生中 & 曲の残り1.8秒以下で自然な1.5秒クロスフェード開始
+            // ランダム再生中 & 曲の残り3.0秒以下で2.5秒間の滑らかな自動クロスフェード開始
             if (isRandomRef.current) {
               const timeLeft = audio.duration - audio.currentTime;
-              if (timeLeft <= 1.8 && timeLeft > 0.3) {
+              if (timeLeft <= 3.0 && timeLeft > 0.5) {
                 const next = pickNextRandomSong();
                 if (next) {
-                  executeCrossfade(next, 1500);
+                  executeAutoCrossfade(next);
                 }
               }
             }
@@ -472,7 +483,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
             if (!isFadingRef.current) {
               const next = pickNextRandomSong();
               if (next) {
-                playDirect(next);
+                transitionToSong(next);
               }
             }
           } else {
@@ -505,7 +516,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       cleanupA();
       cleanupB();
     };
-  }, [isDragging, pickNextRandomSong, executeCrossfade, playDirect]);
+  }, [isDragging, pickNextRandomSong, executeAutoCrossfade, transitionToSong]);
 
   // バックグラウンド再生（MediaSession API）の対応
   useEffect(() => {
@@ -580,10 +591,10 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 }`}
                 style={{ width: `${displayProgress}%` }}
               >
-                {/* つまみ（ハンドル）: ドラッグ中やホバー時に大きく見やすく */}
+                {/* つまみ（ハンドル） */}
                 <div
                   className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 rounded-full bg-white border-2 border-indigo-600 shadow-md transition-all ${
-                    isDragging ? "w-4 h-4 scale-125" : "w-3 h-3 sm:w-3.5 sm:h-3.5 opacity-80 group-hover:opacity-100 group-hover:scale-110"
+                    isDragging ? "w-4 h-4 scale-125" : "w-3 h-3 sm:w-3.5 sm:h-3.5 opacity-90 group-hover:opacity-100 group-hover:scale-110"
                   }`}
                 />
               </div>
