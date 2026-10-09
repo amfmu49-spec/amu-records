@@ -139,7 +139,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
   }, [currentSong]);
 
   // クロスフェードを実行して次の曲へ進む
-  const executeCrossfade = useCallback((nextSong: Song) => {
+  // durationMs: 自動移行時は 4000ms（4秒）、手動スキップ時は 800ms（0.8秒）
+  const executeCrossfade = useCallback((nextSong: Song, durationMs = 4000) => {
     if (isFadingRef.current) return;
 
     const currentDeck = activeDeckRef.current;
@@ -157,6 +158,10 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     isFadingRef.current = true;
     setIsCrossfading(true);
 
+    // 次の曲をUIに即座に反映（ユーザーが今どの曲に移ったか分かりやすくする）
+    setCurrentSong(nextSong);
+    setProgress(0);
+
     // 次の曲をセットして再生開始（音量0から）
     nextAudio.src = nextSong.file_url;
     nextAudio.volume = 0;
@@ -171,20 +176,25 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
 
     incrementPlayCount(nextSong.id);
 
-    const DURATION_MS = 3000; // 3秒間のクロスフェード
-    const STEPS = 30; // 100msごとに音量変化
-    const stepInterval = DURATION_MS / STEPS;
+    // 40ms間隔で滑らかに音量カーブを適用
+    const STEPS = Math.max(15, Math.floor(durationMs / 40));
+    const stepInterval = durationMs / STEPS;
     let step = 0;
 
     fadeIntervalRef.current = setInterval(() => {
       step++;
-      const ratio = step / STEPS; // 0 -> 1
+      const ratio = Math.min(1, step / STEPS); // 0 -> 1
+
+      // Equal Power Crossfade Curve (イコールパワーカーブ)
+      // 音のエネルギー和 (cos^2 + sin^2 = 1) を一定に保ち、音量の落ち込み（引っ込み）を完全に防ぐ
+      const outVolume = Math.cos(ratio * 0.5 * Math.PI); // 1.0 -> 0.0
+      const inVolume = Math.sin(ratio * 0.5 * Math.PI);  // 0.0 -> 1.0
 
       if (currentAudio) {
-        currentAudio.volume = Math.max(0, 1 - ratio);
+        currentAudio.volume = Math.max(0, Math.min(1, outVolume));
       }
       if (nextAudio) {
-        nextAudio.volume = Math.min(1, ratio);
+        nextAudio.volume = Math.max(0, Math.min(1, inVolume));
       }
 
       if (step >= STEPS) {
@@ -202,7 +212,6 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         }
 
         activeDeckRef.current = nextDeck;
-        setCurrentSong(nextSong);
         isFadingRef.current = false;
         setIsCrossfading(false);
 
@@ -283,11 +292,11 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     playDirect(firstSong);
   }, [playDirect]);
 
-  // 次の曲へ進む（手動ボタン）
+  // 次の曲へ進む（手動ボタン: 0.8秒のシャープで自然なクイックフェード）
   const playNextSong = useCallback(() => {
     const next = pickNextRandomSong();
     if (next) {
-      executeCrossfade(next);
+      executeCrossfade(next, 800);
     }
   }, [pickNextRandomSong, executeCrossfade]);
 
@@ -348,13 +357,13 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
           if (audio.duration) {
             setProgress((audio.currentTime / audio.duration) * 100 || 0);
 
-            // ランダム再生中 & 曲の残り3.5秒以下で自動クロスフェード開始
+            // ランダム再生中 & 曲の残り5秒以下でゆったり4秒間の美しいDJクロスフェード開始
             if (isRandomRef.current) {
               const timeLeft = audio.duration - audio.currentTime;
-              if (timeLeft <= 3.5 && timeLeft > 0.5) {
+              if (timeLeft <= 5.0 && timeLeft > 0.8) {
                 const next = pickNextRandomSong();
                 if (next) {
-                  executeCrossfade(next);
+                  executeCrossfade(next, 4000); // 自動送りは4秒のイコールパワーカーブ
                 }
               }
             }
@@ -570,7 +579,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
               <button
                 type="button"
                 onClick={playNextSong}
-                title="次の曲へ (クロスフェード)"
+                title="次の曲へ (クイックフェード)"
                 className="p-2 sm:p-2.5 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 fill-current" viewBox="0 0 24 24">
