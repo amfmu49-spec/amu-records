@@ -262,7 +262,9 @@ export default function NotificationBell() {
         className={`relative p-2 sm:p-2.5 rounded-full transition-all active:scale-95 flex items-center justify-center cursor-pointer ${
           isOpen
             ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"
-            : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80"
+            : hasUnread
+              ? "bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-500/30"
+              : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80"
         }`}
       >
         <svg

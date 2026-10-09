@@ -574,6 +574,17 @@ export default function ProfilePage() {
                     </div>
                   ) : (
                     <>
+                      {/* サムネイル画像 */}
+                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg overflow-hidden bg-slate-200 shrink-0 shadow-sm border border-slate-200/60">
+                        {song.cover_url ? (
+                          <img src={song.cover_url} alt="Cover" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-400 text-[10px] font-bold">
+                            NO IMG
+                          </div>
+                        )}
+                      </div>
+
                       <div className="flex-1 min-w-0">
                         <Link href={`/song/${song.id}`} className="font-bold text-slate-800 hover:text-indigo-600 hover:underline truncate block">
                           {song.title}
