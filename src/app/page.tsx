@@ -87,7 +87,7 @@ export default async function Home() {
                 最新のトラック
               </h2>
               
-              {user && <RandomPlayButton songs={songs || []} />}
+              <RandomPlayButton songs={songs || []} />
             </div>
             
             <TrackList songs={songs || []} currentUserId={user?.id} limit={5} />
