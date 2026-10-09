@@ -139,8 +139,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
   }, [currentSong]);
 
   // クロスフェードを実行して次の曲へ進む
-  // durationMs: 自動移行時は 4000ms（4秒）、手動スキップ時は 800ms（0.8秒）
-  const executeCrossfade = useCallback((nextSong: Song, durationMs = 4000) => {
+  // durationMs: 自動移行時は 1500ms（1.5秒）、手動スキップ時は 400ms（0.4秒）
+  const executeCrossfade = useCallback((nextSong: Song, durationMs = 1500) => {
     if (isFadingRef.current) return;
 
     const currentDeck = activeDeckRef.current;
@@ -292,11 +292,11 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     playDirect(firstSong);
   }, [playDirect]);
 
-  // 次の曲へ進む（手動ボタン: 0.8秒のシャープで自然なクイックフェード）
+  // 次の曲へ進む（手動ボタン: 0.4秒の超クイックフェードで瞬時にスキップ）
   const playNextSong = useCallback(() => {
     const next = pickNextRandomSong();
     if (next) {
-      executeCrossfade(next, 800);
+      executeCrossfade(next, 400);
     }
   }, [pickNextRandomSong, executeCrossfade]);
 
@@ -357,13 +357,13 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
           if (audio.duration) {
             setProgress((audio.currentTime / audio.duration) * 100 || 0);
 
-            // ランダム再生中 & 曲の残り5秒以下でゆったり4秒間の美しいDJクロスフェード開始
+            // ランダム再生中 & 曲の残り1.8秒以下で自然な1.5秒クロスフェード開始
             if (isRandomRef.current) {
               const timeLeft = audio.duration - audio.currentTime;
-              if (timeLeft <= 5.0 && timeLeft > 0.8) {
+              if (timeLeft <= 1.8 && timeLeft > 0.3) {
                 const next = pickNextRandomSong();
                 if (next) {
-                  executeCrossfade(next, 4000); // 自動送りは4秒のイコールパワーカーブ
+                  executeCrossfade(next, 1500); // 1.5秒のスマートなクロスフェード
                 }
               }
             }
