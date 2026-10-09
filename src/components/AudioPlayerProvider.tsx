@@ -276,7 +276,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     }, 800); // プリロードが効いていれば即座に呼ばれる
   }, [pickNextRandomSong]);
 
-  // --- 手動スキップ / 曲変更（ノイズのない極めて快適なクイックトランジション） ---
+  // --- 手動スキップ / 曲変更（手動時も滑らかなクロスフェード） ---
   const transitionToSong = useCallback((song: Song) => {
     if (fadeIntervalRef.current) {
       clearInterval(fadeIntervalRef.current);
@@ -290,61 +290,150 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     const currentAudio = currentDeck === "A" ? audioRefA.current : audioRefB.current;
     const nextAudio = nextDeck === "A" ? audioRefA.current : audioRefB.current;
 
-    // 前の曲を少し長め（400ms）にフェードアウトさせてブツ切りノイズを完全防止
-    if (currentAudio && !currentAudio.paused) {
-      const fadeSteps = 20;
-      let s = 0;
-      const quickFade = setInterval(() => {
-        s++;
-        try {
-          currentAudio.volume = Math.max(0, 1 - (s / fadeSteps));
-        } catch {}
-        if (s >= fadeSteps) {
-          clearInterval(quickFade);
-          currentAudio.pause();
-          currentAudio.currentTime = 0;
-          currentAudio.volume = 1;
-        }
-      }, 20);
-    }
+    if (!nextAudio) return;
 
-    // 次の曲を再生
-    if (nextAudio) {
+    // 前の曲がそもそも再生されていない場合（最初の再生や、一時停止中からの再生）は即座に再生する
+    const isFirstPlayOrPaused = !currentAudio || currentAudio.paused || currentAudio.currentTime === 0;
+
+    if (isFirstPlayOrPaused) {
       if (!nextAudio.src || !nextAudio.src.includes(song.file_url)) {
         nextAudio.src = song.file_url;
       }
       nextAudio.volume = 1;
       nextAudio.currentTime = 0;
       nextAudio.play().catch((e) => console.warn("Next play error:", e));
-    }
 
-    activeDeckRef.current = nextDeck;
-    setCurrentSong(song);
-    setIsPlaying(true);
-    setProgress(0);
-    setCurrentTime(0);
+      activeDeckRef.current = nextDeck;
+      setCurrentSong(song);
+      setIsPlaying(true);
+      setProgress(0);
+      setCurrentTime(0);
 
-    incrementPlayCount(song.id);
+      incrementPlayCount(song.id);
+      historyRef.current.push(song.id);
+      if (historyRef.current.length > 20) historyRef.current.shift();
 
-    historyRef.current.push(song.id);
-    if (historyRef.current.length > 20) {
-      historyRef.current.shift();
-    }
-
-    // スキップ後、次の曲をプリロード
-    setTimeout(() => {
-      if (isRandomRef.current) {
-        const next = pickNextRandomSong();
-        if (next) {
-          nextSongRef.current = next;
-          const idleDeck = activeDeckRef.current === "A" ? audioRefB.current : audioRefA.current;
-          if (idleDeck) {
-            idleDeck.src = next.file_url;
-            idleDeck.load();
+      // スキップ後、次の曲をプリロード
+      setTimeout(() => {
+        if (isRandomRef.current) {
+          const next = pickNextRandomSong();
+          if (next) {
+            nextSongRef.current = next;
+            const idleDeck = activeDeckRef.current === "A" ? audioRefB.current : audioRefA.current;
+            if (idleDeck) {
+              idleDeck.src = next.file_url;
+              idleDeck.load();
+            }
           }
         }
+      }, 1500);
+      return;
+    }
+
+    // --- ここから手動スキップ時のクロスフェード処理（1.0秒） ---
+    isFadingRef.current = true;
+    setIsCrossfading(true);
+
+    if (!nextAudio.src || !nextAudio.src.includes(song.file_url)) {
+      nextAudio.src = song.file_url;
+      nextAudio.load();
+    }
+    nextAudio.volume = 0;
+    nextAudio.currentTime = 0;
+
+    let fadeStarted = false;
+
+    const startFading = () => {
+      if (fadeStarted) return;
+      fadeStarted = true;
+
+      setCurrentSong(song);
+      setIsPlaying(true);
+      setProgress(0);
+      setCurrentTime(0);
+      activeDeckRef.current = nextDeck; // 即座にUI更新先を切り替え
+
+      incrementPlayCount(song.id);
+
+      const DURATION_MS = 1000; // 手動スキップ時はキビキビとした1.0秒フェード
+      const STEPS = 20; // 50msごとに更新
+      const stepInterval = DURATION_MS / STEPS;
+      let step = 0;
+
+      fadeIntervalRef.current = setInterval(() => {
+        step++;
+        const ratio = Math.min(1, step / STEPS);
+
+        const outVolume = Math.max(0, Math.cos(ratio * 0.5 * Math.PI));
+        const inVolume = Math.min(1, Math.sin(ratio * 0.5 * Math.PI));
+
+        if (currentAudio) {
+          try { currentAudio.volume = outVolume; } catch {}
+        }
+        if (nextAudio) {
+          try { nextAudio.volume = inVolume; } catch {}
+        }
+
+        if (step >= STEPS) {
+          clearInterval(fadeIntervalRef.current);
+          fadeIntervalRef.current = null;
+
+          if (currentAudio) {
+            currentAudio.pause();
+            currentAudio.volume = 1;
+            currentAudio.currentTime = 0;
+          }
+          if (nextAudio) {
+            nextAudio.volume = 1;
+          }
+
+          isFadingRef.current = false;
+          setIsCrossfading(false);
+
+          historyRef.current.push(song.id);
+          if (historyRef.current.length > 20) {
+            historyRef.current.shift();
+          }
+
+          // クロスフェード完了後、次の曲をプリロード
+          setTimeout(() => {
+            if (isRandomRef.current) {
+              const next = pickNextRandomSong();
+              if (next) {
+                nextSongRef.current = next;
+                if (currentAudio) {
+                  currentAudio.src = next.file_url;
+                  currentAudio.load();
+                }
+              }
+            }
+          }, 1500);
+        }
+      }, stepInterval);
+    };
+
+    const onPlaying = () => {
+      nextAudio.removeEventListener("playing", onPlaying);
+      startFading();
+    };
+    nextAudio.addEventListener("playing", onPlaying);
+
+    const playPromise = nextAudio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch((e) => {
+        console.warn("Manual skip play error:", e);
+        nextAudio.removeEventListener("playing", onPlaying);
+        isFadingRef.current = false;
+        setIsCrossfading(false);
+      });
+    }
+
+    setTimeout(() => {
+      if (!fadeStarted) {
+        nextAudio.removeEventListener("playing", onPlaying);
+        startFading();
       }
-    }, 1500);
+    }, 500);
   }, [pickNextRandomSong]);
 
   // 外部からの単曲再生指示
