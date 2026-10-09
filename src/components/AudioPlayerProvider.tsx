@@ -16,6 +16,8 @@ type AudioPlayerContextType = {
   isPlaying: boolean;
   isRandom: boolean;
   isCrossfading: boolean;
+  currentTime: number;
+  duration: number;
   playSong: (song: Song, playlist?: any[]) => void;
   togglePlay: () => void;
   toggleRandom: () => void;
@@ -30,6 +32,8 @@ const AudioPlayerContext = createContext<AudioPlayerContextType>({
   isPlaying: false,
   isRandom: false,
   isCrossfading: false,
+  currentTime: 0,
+  duration: 0,
   playSong: () => {},
   togglePlay: () => {},
   toggleRandom: () => {},
@@ -40,6 +44,14 @@ const AudioPlayerContext = createContext<AudioPlayerContextType>({
 });
 
 export const useAudioPlayer = () => useContext(AudioPlayerContext);
+
+// 秒数を mm:ss 形式に整形
+const formatTime = (seconds: number) => {
+  if (isNaN(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+};
 
 // 任意の曲オブジェクトを正規化
 const normalizeSong = (item: any): Song => {
@@ -76,10 +88,17 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRandom, setIsRandom] = useState(false);
   const [isCrossfading, setIsCrossfading] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [progress, setProgress] = useState(0);
   const [playlist, setPlaylistState] = useState<Song[]>([]);
 
-  // 再生履歴（最近再生したIDを保持して連続重複を防ぐ）
+  // シーク中のドラッグ状態
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragProgress, setDragProgress] = useState(0);
+  const progressBarRef = useRef<HTMLDivElement>(null);
+
+  // 再生履歴
   const historyRef = useRef<string[]>([]);
 
   // Dual Deckオーディオ要素（AとB）
@@ -125,21 +144,17 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     if (!list || list.length === 0) return null;
     if (list.length === 1) return list[0];
 
-    // 直近に再生された曲（現在の曲＋履歴）を除外した候補
     const currentId = currentSong?.id;
     const recentIds = new Set([currentId, ...historyRef.current.slice(-Math.min(5, list.length - 1))]);
     const candidates = list.filter((s) => !recentIds.has(s.id));
 
-    // 候補が尽きた場合は現在の曲以外から
     const pool = candidates.length > 0 ? candidates : list.filter((s) => s.id !== currentId);
     if (pool.length === 0) return list[0];
 
-    const picked = pool[Math.floor(Math.random() * pool.length)];
-    return picked;
+    return pool[Math.floor(Math.random() * pool.length)];
   }, [currentSong]);
 
-  // クロスフェードを実行して次の曲へ進む
-  // durationMs: 自動移行時は 1500ms（1.5秒）、手動スキップ時は 400ms（0.4秒）
+  // クロスフェードの実行（※次の曲の音声ロードが完了し、実際に鳴り始めてからフェードを行うことで「ぶつ切り」を完全防止）
   const executeCrossfade = useCallback((nextSong: Song, durationMs = 1500) => {
     if (isFadingRef.current) return;
 
@@ -150,81 +165,105 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
 
     if (!currentAudio || !nextAudio) return;
 
-    // 既存のフェード処理をクリア
     if (fadeIntervalRef.current) {
       clearInterval(fadeIntervalRef.current);
+      fadeIntervalRef.current = null;
     }
 
     isFadingRef.current = true;
     setIsCrossfading(true);
 
-    // 次の曲をUIに即座に反映（ユーザーが今どの曲に移ったか分かりやすくする）
-    setCurrentSong(nextSong);
-    setProgress(0);
-
-    // 次の曲をセットして再生開始（音量0から）
+    // 次の曲のソースをセットし、まずは音量0でロード＆再生準備
     nextAudio.src = nextSong.file_url;
     nextAudio.volume = 0;
     nextAudio.currentTime = 0;
 
+    let hasStartedFading = false;
+
+    // 次の曲が実際に再生開始された瞬間にフェードを開始する関数
+    const startFadingProcess = () => {
+      if (hasStartedFading) return;
+      hasStartedFading = true;
+
+      // UIを更新
+      setCurrentSong(nextSong);
+      setProgress(0);
+      setCurrentTime(0);
+
+      incrementPlayCount(nextSong.id);
+
+      const STEPS = Math.max(15, Math.floor(durationMs / 30));
+      const stepInterval = durationMs / STEPS;
+      let step = 0;
+
+      fadeIntervalRef.current = setInterval(() => {
+        step++;
+        const ratio = Math.min(1, step / STEPS);
+
+        // Equal Power カーブ (音量の谷間・引っ込みを防止)
+        const outVolume = Math.cos(ratio * 0.5 * Math.PI); // 1.0 -> 0.0
+        const inVolume = Math.sin(ratio * 0.5 * Math.PI);  // 0.0 -> 1.0
+
+        if (currentAudio) {
+          currentAudio.volume = Math.max(0, Math.min(1, outVolume));
+        }
+        if (nextAudio) {
+          nextAudio.volume = Math.max(0, Math.min(1, inVolume));
+        }
+
+        if (step >= STEPS) {
+          clearInterval(fadeIntervalRef.current);
+          fadeIntervalRef.current = null;
+
+          if (currentAudio) {
+            currentAudio.pause();
+            currentAudio.volume = 1;
+            currentAudio.currentTime = 0;
+          }
+          if (nextAudio) {
+            nextAudio.volume = 1;
+          }
+
+          activeDeckRef.current = nextDeck;
+          isFadingRef.current = false;
+          setIsCrossfading(false);
+
+          historyRef.current.push(nextSong.id);
+          if (historyRef.current.length > 20) {
+            historyRef.current.shift();
+          }
+        }
+      }, stepInterval);
+    };
+
+    // 次の曲が再生開始（playing）されたらフェード開始
+    const onPlaying = () => {
+      nextAudio.removeEventListener("playing", onPlaying);
+      startFadingProcess();
+    };
+    nextAudio.addEventListener("playing", onPlaying);
+
     const playPromise = nextAudio.play();
     if (playPromise !== undefined) {
       playPromise.catch((err) => {
-        console.warn("Crossfade target audio play error:", err);
+        console.warn("Crossfade target play error:", err);
+        // エラー時はフォールバック
+        nextAudio.removeEventListener("playing", onPlaying);
+        isFadingRef.current = false;
+        setIsCrossfading(false);
       });
     }
 
-    incrementPlayCount(nextSong.id);
-
-    // 40ms間隔で滑らかに音量カーブを適用
-    const STEPS = Math.max(15, Math.floor(durationMs / 40));
-    const stepInterval = durationMs / STEPS;
-    let step = 0;
-
-    fadeIntervalRef.current = setInterval(() => {
-      step++;
-      const ratio = Math.min(1, step / STEPS); // 0 -> 1
-
-      // Equal Power Crossfade Curve (イコールパワーカーブ)
-      // 音のエネルギー和 (cos^2 + sin^2 = 1) を一定に保ち、音量の落ち込み（引っ込み）を完全に防ぐ
-      const outVolume = Math.cos(ratio * 0.5 * Math.PI); // 1.0 -> 0.0
-      const inVolume = Math.sin(ratio * 0.5 * Math.PI);  // 0.0 -> 1.0
-
-      if (currentAudio) {
-        currentAudio.volume = Math.max(0, Math.min(1, outVolume));
+    // セーフティタイムアウト: もしネットワーク遅延で800ms以内にplayingが来なかった場合でも強制開始
+    setTimeout(() => {
+      if (!hasStartedFading) {
+        nextAudio.removeEventListener("playing", onPlaying);
+        startFadingProcess();
       }
-      if (nextAudio) {
-        nextAudio.volume = Math.max(0, Math.min(1, inVolume));
-      }
-
-      if (step >= STEPS) {
-        clearInterval(fadeIntervalRef.current);
-        fadeIntervalRef.current = null;
-
-        // フェード完了処理
-        if (currentAudio) {
-          currentAudio.pause();
-          currentAudio.volume = 1;
-          currentAudio.currentTime = 0;
-        }
-        if (nextAudio) {
-          nextAudio.volume = 1;
-        }
-
-        activeDeckRef.current = nextDeck;
-        isFadingRef.current = false;
-        setIsCrossfading(false);
-
-        // 履歴に追加
-        historyRef.current.push(nextSong.id);
-        if (historyRef.current.length > 20) {
-          historyRef.current.shift();
-        }
-      }
-    }, stepInterval);
+    }, 800);
   }, []);
 
-  // クロスフェードなしの直接曲切り替え
+  // 直接曲切り替え
   const playDirect = useCallback((song: Song) => {
     if (fadeIntervalRef.current) {
       clearInterval(fadeIntervalRef.current);
@@ -287,24 +326,22 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     setIsRandom(true);
     isRandomRef.current = true;
 
-    // ランダムな曲を選択
     const firstSong = normalizedList[Math.floor(Math.random() * normalizedList.length)];
     playDirect(firstSong);
   }, [playDirect]);
 
-  // 次の曲へ進む（手動ボタン: 0.4秒の超クイックフェードで瞬時にスキップ）
+  // 手動スキップ: 次の曲が実際に鳴り始めてから0.8秒で滑らかにフェード
   const playNextSong = useCallback(() => {
     const next = pickNextRandomSong();
     if (next) {
-      executeCrossfade(next, 400);
+      executeCrossfade(next, 800);
     }
   }, [pickNextRandomSong, executeCrossfade]);
 
   // 前の曲へ戻る
   const playPrevSong = useCallback(() => {
     if (historyRef.current.length > 1) {
-      // 直前の曲
-      historyRef.current.pop(); // 現在の曲
+      historyRef.current.pop();
       const prevId = historyRef.current.pop();
       const prevSong = playlistRef.current.find((s) => s.id === prevId);
       if (prevSong) {
@@ -312,7 +349,6 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         return;
       }
     }
-    // なければランダム
     playNextSong();
   }, [playDirect, playNextSong]);
 
@@ -335,15 +371,53 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     setIsRandom((prev) => !prev);
   }, []);
 
-  // シークバー操作
-  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+  // --- 高精度・快適シークバー操作（Pointer Events対応） ---
+  const calculateProgressFromPointer = (e: React.PointerEvent<HTMLDivElement> | PointerEvent) => {
+    if (!progressBarRef.current) return 0;
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const clientX = e.clientX;
+    const rawRatio = (clientX - rect.left) / rect.width;
+    return Math.max(0, Math.min(1, rawRatio));
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const activeAudio = activeDeckRef.current === "A" ? audioRefA.current : audioRefB.current;
     if (!activeAudio || !activeAudio.duration) return;
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    activeAudio.currentTime = percent * activeAudio.duration;
-    setProgress(percent * 100);
+    // ポインターキャプチャで要素外に指が出ても追従
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    setIsDragging(true);
+
+    const ratio = calculateProgressFromPointer(e);
+    setDragProgress(ratio * 100);
+    setCurrentTime(ratio * activeAudio.duration);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging) return;
+    const activeAudio = activeDeckRef.current === "A" ? audioRefA.current : audioRefB.current;
+    if (!activeAudio || !activeAudio.duration) return;
+
+    const ratio = calculateProgressFromPointer(e);
+    setDragProgress(ratio * 100);
+    setCurrentTime(ratio * activeAudio.duration);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging) return;
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+    setIsDragging(false);
+
+    const activeAudio = activeDeckRef.current === "A" ? audioRefA.current : audioRefB.current;
+    if (!activeAudio || !activeAudio.duration) return;
+
+    const ratio = calculateProgressFromPointer(e);
+    const targetTime = ratio * activeAudio.duration;
+    activeAudio.currentTime = targetTime;
+    setProgress(ratio * 100);
+    setCurrentTime(targetTime);
   };
 
   // デッキイベントの登録と監視
@@ -352,10 +426,13 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       if (!audio) return () => {};
 
       const onTimeUpdate = () => {
-        // アクティブなデッキのみがプログレスとクロスフェード判定を担当
         if (activeDeckRef.current === deckName && !isFadingRef.current) {
           if (audio.duration) {
-            setProgress((audio.currentTime / audio.duration) * 100 || 0);
+            setDuration(audio.duration);
+            if (!isDragging) {
+              setCurrentTime(audio.currentTime);
+              setProgress((audio.currentTime / audio.duration) * 100 || 0);
+            }
 
             // ランダム再生中 & 曲の残り1.8秒以下で自然な1.5秒クロスフェード開始
             if (isRandomRef.current) {
@@ -363,11 +440,17 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
               if (timeLeft <= 1.8 && timeLeft > 0.3) {
                 const next = pickNextRandomSong();
                 if (next) {
-                  executeCrossfade(next, 1500); // 1.5秒のスマートなクロスフェード
+                  executeCrossfade(next, 1500);
                 }
               }
             }
           }
+        }
+      };
+
+      const onLoadedMetadata = () => {
+        if (activeDeckRef.current === deckName && audio.duration) {
+          setDuration(audio.duration);
         }
       };
 
@@ -386,7 +469,6 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       const onEnded = () => {
         if (activeDeckRef.current === deckName) {
           if (isRandomRef.current) {
-            // クロスフェードがまだ始まっていない場合のフォールバック
             if (!isFadingRef.current) {
               const next = pickNextRandomSong();
               if (next) {
@@ -396,17 +478,20 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
           } else {
             setIsPlaying(false);
             setProgress(0);
+            setCurrentTime(0);
           }
         }
       };
 
       audio.addEventListener("timeupdate", onTimeUpdate);
+      audio.addEventListener("loadedmetadata", onLoadedMetadata);
       audio.addEventListener("play", onPlay);
       audio.addEventListener("pause", onPause);
       audio.addEventListener("ended", onEnded);
 
       return () => {
         audio.removeEventListener("timeupdate", onTimeUpdate);
+        audio.removeEventListener("loadedmetadata", onLoadedMetadata);
         audio.removeEventListener("play", onPlay);
         audio.removeEventListener("pause", onPause);
         audio.removeEventListener("ended", onEnded);
@@ -420,7 +505,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       cleanupA();
       cleanupB();
     };
-  }, [pickNextRandomSong, executeCrossfade, playDirect]);
+  }, [isDragging, pickNextRandomSong, executeCrossfade, playDirect]);
 
   // バックグラウンド再生（MediaSession API）の対応
   useEffect(() => {
@@ -445,6 +530,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     }
   }, [currentSong, togglePlay, playNextSong, playPrevSong]);
 
+  const displayProgress = isDragging ? dragProgress : progress;
+
   return (
     <AudioPlayerContext.Provider
       value={{
@@ -452,6 +539,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         isPlaying,
         isRandom,
         isCrossfading,
+        currentTime,
+        duration,
         playSong,
         togglePlay,
         toggleRandom,
@@ -463,35 +552,48 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     >
       {children}
 
-      {/* Dual Deck Audio Elements (A and B for Crossfade) */}
+      {/* Dual Deck Audio Elements */}
       <audio ref={audioRefA} playsInline preload="auto" />
       <audio ref={audioRefB} playsInline preload="auto" />
 
       {/* グローバルプレイヤー（画面下部固定） */}
       {currentSong && (
-        <div className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-2xl border-t border-slate-200/80 shadow-[0_-10px_35px_rgba(0,0,0,0.08)] z-[80] transition-all duration-300">
-          {/* プログレスバー */}
+        <div className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-2xl border-t border-slate-200/90 shadow-[0_-10px_35px_rgba(0,0,0,0.08)] z-[80] transition-all duration-300">
+          {/* 超快適シークバー（広いタップ＆ドラッグ当たり判定エリア） */}
           <div
-            className="absolute top-0 left-0 w-full h-1.5 sm:h-2 bg-slate-100 cursor-pointer group"
-            onClick={seek}
-            title="シーク"
+            ref={progressBarRef}
+            className="absolute -top-3.5 left-0 w-full h-8 flex items-center cursor-pointer group touch-none select-none z-10"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            title="ドラッグまたはタップでシーク"
           >
-            <div
-              className={`h-full transition-all relative ${
-                isCrossfading
-                  ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 animate-pulse"
-                  : "bg-indigo-600 group-hover:bg-indigo-500"
-              }`}
-              style={{ width: `${progress}%` }}
-            >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-indigo-700 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            {/* シークバー本体のトラック */}
+            <div className="w-full h-1.5 sm:h-2 bg-slate-200/80 group-hover:h-2.5 transition-all relative overflow-visible">
+              {/* 再生済みバー */}
+              <div
+                className={`h-full relative ${
+                  isCrossfading
+                    ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 animate-pulse"
+                    : "bg-indigo-600 group-hover:bg-indigo-500"
+                }`}
+                style={{ width: `${displayProgress}%` }}
+              >
+                {/* つまみ（ハンドル）: ドラッグ中やホバー時に大きく見やすく */}
+                <div
+                  className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 rounded-full bg-white border-2 border-indigo-600 shadow-md transition-all ${
+                    isDragging ? "w-4 h-4 scale-125" : "w-3 h-3 sm:w-3.5 sm:h-3.5 opacity-80 group-hover:opacity-100 group-hover:scale-110"
+                  }`}
+                />
+              </div>
             </div>
           </div>
 
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-3 sm:gap-6">
+          <div className="max-w-5xl mx-auto px-3.5 sm:px-6 py-2 sm:py-2.5 flex items-center justify-between gap-2.5 sm:gap-6">
             {/* 楽曲メタ情報 */}
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
-              <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl overflow-hidden bg-slate-100 shrink-0 shadow-sm border border-slate-200 relative group">
+            <div className="flex items-center gap-2.5 sm:gap-4 min-w-0 flex-1">
+              <div className="w-10 h-10 sm:w-13 sm:h-13 rounded-xl sm:rounded-2xl overflow-hidden bg-slate-100 shrink-0 shadow-sm border border-slate-200 relative group">
                 {currentSong.cover_url ? (
                   <img src={currentSong.cover_url} alt="Cover" className="w-full h-full object-cover" />
                 ) : (
@@ -508,30 +610,42 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
 
               <div className="truncate min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <h4 className="font-extrabold text-slate-900 truncate text-sm sm:text-base leading-snug">
+                  <h4 className="font-extrabold text-slate-900 truncate text-xs sm:text-base leading-snug">
                     {currentSong.title}
                   </h4>
                   {isCrossfading && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-gradient-to-r from-indigo-600 to-pink-600 text-white animate-pulse">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-black bg-gradient-to-r from-indigo-600 to-pink-600 text-white animate-pulse">
                       <span>✨</span>
                       <span>Crossfade</span>
                     </span>
                   )}
                 </div>
-                <p className="text-xs font-semibold text-slate-500 truncate mt-0.5">
-                  {currentSong.artist}
-                </p>
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-500 truncate mt-0.5">
+                  <span className="truncate">{currentSong.artist}</span>
+                  {duration > 0 && (
+                    <span className="text-[11px] text-slate-400 font-mono shrink-0 hidden xs:inline">
+                      {formatTime(currentTime)} / {formatTime(duration)}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* 再生コントロール（シャッフル・前・再生・次・クロスフェード） */}
-            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            {/* 再生コントロール（シャッフル・前・再生・次） */}
+            <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
+              {/* 時間表示（モバイル向けインライン表示） */}
+              {duration > 0 && (
+                <span className="text-[10px] sm:text-xs text-slate-400 font-mono shrink-0 pr-1 select-none xs:hidden">
+                  {formatTime(currentTime)}
+                </span>
+              )}
+
               {/* シャッフル / ランダム再生トグルボタン */}
               <button
                 type="button"
                 onClick={toggleRandom}
-                title={isRandom ? "ランダム自動再生中 (クロスフェードON)" : "ランダム再生をONにする"}
-                className={`p-2 sm:p-2.5 rounded-full transition-all active:scale-95 cursor-pointer relative ${
+                title={isRandom ? "ランダム自動再生中 (ON)" : "ランダム再生をONにする"}
+                className={`p-1.5 sm:p-2.5 rounded-full transition-all active:scale-95 cursor-pointer relative ${
                   isRandom
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
                     : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
@@ -541,7 +655,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                   <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
                 </svg>
                 {isRandom && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-pink-500 ring-2 ring-white"></span>
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-pink-500 ring-2 ring-white"></span>
                 )}
               </button>
 
@@ -562,25 +676,25 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 type="button"
                 onClick={togglePlay}
                 title={isPlaying ? "一時停止" : "再生"}
-                className="w-11 h-11 sm:w-13 sm:h-13 flex items-center justify-center rounded-full bg-slate-900 hover:bg-slate-800 text-white active:scale-95 transition-all shadow-lg shadow-slate-900/20 cursor-pointer"
+                className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full bg-slate-900 hover:bg-slate-800 text-white active:scale-95 transition-all shadow-md shadow-slate-900/20 cursor-pointer"
               >
                 {isPlaying ? (
-                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 fill-current" viewBox="0 0 24 24">
                     <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                   </svg>
                 ) : (
-                  <svg className="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 fill-current ml-0.5" viewBox="0 0 24 24">
                     <path d="M8 5v14l11-7z" />
                   </svg>
                 )}
               </button>
 
-              {/* 次の曲（クロスフェード送り） */}
+              {/* 次の曲（手動スキップ） */}
               <button
                 type="button"
                 onClick={playNextSong}
-                title="次の曲へ (クイックフェード)"
-                className="p-2 sm:p-2.5 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer"
+                title="次の曲へ"
+                className="p-1.5 sm:p-2.5 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 fill-current" viewBox="0 0 24 24">
                   <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
