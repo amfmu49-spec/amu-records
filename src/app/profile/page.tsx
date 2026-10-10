@@ -297,17 +297,31 @@ export default function ProfilePage() {
         finalImageUrl = publicUrl;
       }
 
-      const { error } = await supabase.from("announcements").insert([
-        {
-          title: adminTitle.trim(),
-          content: adminContent.trim(),
-          category: adminCategory,
-          link_url: adminLinkUrl.trim() || null,
-          image_url: finalImageUrl,
-          is_pinned: adminIsPinned,
-          created_by: user?.id,
-        },
-      ]);
+      let insertPayload: any = {
+        title: adminTitle.trim(),
+        content: adminContent.trim(),
+        category: adminCategory,
+        link_url: adminLinkUrl.trim() || null,
+        is_pinned: adminIsPinned,
+        created_by: user?.id,
+      };
+
+      if (finalImageUrl) {
+        insertPayload.image_url = finalImageUrl;
+      }
+
+      let { error } = await supabase.from("announcements").insert([insertPayload]);
+
+      // DBに image_url カラムがまだ作成されていない場合のフォールバック（自動再試行）
+      if (error && (error.message?.includes("image_url") || error.details?.includes("image_url") || error.code === "PGRST204")) {
+        console.warn("Retrying announcement insert without image_url...");
+        delete insertPayload.image_url;
+        const retry = await supabase.from("announcements").insert([insertPayload]);
+        error = retry.error;
+        if (!error) {
+          alert("※お知らせは配信されましたが、画像カラム(image_url)がSupabaseに未反映のため画像は除外されました。SupabaseでマイグレーションSQLを実行してください。");
+        }
+      }
 
       if (error) {
         alert("配信に失敗しました: " + error.message);

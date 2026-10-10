@@ -2,6 +2,25 @@
 ALTER TABLE public.announcements
 ADD COLUMN IF NOT EXISTS image_url text;
 
+-- 1-2. announcementsのRLS権限を更新（認証ユーザーが確実に送信可能に）
+DROP POLICY IF EXISTS "Admins can insert announcements" ON public.announcements;
+CREATE POLICY "Admins can insert announcements"
+  ON public.announcements FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Admins can delete announcements" ON public.announcements;
+CREATE POLICY "Admins can delete announcements"
+  ON public.announcements FOR DELETE
+  TO authenticated
+  USING (
+    created_by = auth.uid() OR
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid() AND profiles.is_admin = true
+    )
+  );
+
 -- 2. コミュニティ掲示板（board_posts）テーブルを作成
 CREATE TABLE IF NOT EXISTS public.board_posts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -7,6 +7,7 @@ import HeroPlayer from "@/components/HeroPlayer";
 import CommunityStatsBar from "@/components/CommunityStatsBar";
 import SongSearchSection from "@/components/SongSearchSection";
 import CommunityBoard from "@/components/CommunityBoard";
+import AnnouncementBanner from "@/components/AnnouncementBanner";
 import { connection } from "next/server";
 
 export default async function Home() {
@@ -70,6 +71,9 @@ export default async function Home() {
       </header>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12">
+        {/* 最新のお知らせバナー（配信されたお知らせがトップ最上部にリアルタイム表示） */}
+        <AnnouncementBanner />
+
         {/* 上部検索バー ＆ リアルタイム検索システム */}
         <SongSearchSection songs={songs || []} currentUserId={user?.id}>
           {/* コミュニティ・楽曲統計バッジ & タップで展開される参加クリエイター一覧 */}

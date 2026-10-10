@@ -104,6 +104,26 @@ export default function NotificationBell() {
     setMounted(true);
     checkUserAndAdmin();
     fetchAnnouncements();
+
+    // Supabase Realtime サブスクリプションでお知らせの変更を即時反映
+    const channel = supabase
+      .channel("announcements_realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "announcements",
+        },
+        () => {
+          fetchAnnouncements();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // ベルアイコンクリック時の挙動
@@ -111,10 +131,13 @@ export default function NotificationBell() {
     const nextState = !isOpen;
     setIsOpen(nextState);
 
-    if (nextState && announcements.length > 0) {
-      // 開いた時点で未読を既読化
-      localStorage.setItem("amu_last_seen_announcement_id", announcements[0].id);
-      setHasUnread(false);
+    if (nextState) {
+      // ベルを開いた際に最新のお知らせを即座に再取得
+      fetchAnnouncements();
+      if (announcements.length > 0) {
+        localStorage.setItem("amu_last_seen_announcement_id", announcements[0].id);
+        setHasUnread(false);
+      }
     }
   };
 
@@ -162,17 +185,40 @@ export default function NotificationBell() {
         finalImageUrl = publicUrl;
       }
 
-      const { data, error } = await supabase.from("announcements").insert([
-        {
-          title: newTitle.trim(),
-          content: newContent.trim(),
-          category: newCategory,
-          image_url: finalImageUrl,
-          link_url: newLinkUrl.trim() || null,
-          is_pinned: newIsPinned,
-          created_by: user?.id || null,
-        },
-      ]).select().single();
+      let insertPayload: any = {
+        title: newTitle.trim(),
+        content: newContent.trim(),
+        category: newCategory,
+        link_url: newLinkUrl.trim() || null,
+        is_pinned: newIsPinned,
+        created_by: user?.id || null,
+      };
+
+      if (finalImageUrl) {
+        insertPayload.image_url = finalImageUrl;
+      }
+
+      let { data, error } = await supabase
+        .from("announcements")
+        .insert([insertPayload])
+        .select()
+        .single();
+
+      // DBに image_url カラムがまだ作成されていない場合のフォールバック（自動再試行）
+      if (error && (error.message?.includes("image_url") || error.details?.includes("image_url") || error.code === "PGRST204")) {
+        console.warn("Retrying announcement insert without image_url...");
+        delete insertPayload.image_url;
+        const retry = await supabase
+          .from("announcements")
+          .insert([insertPayload])
+          .select()
+          .single();
+        data = retry.data;
+        error = retry.error;
+        if (!error) {
+          alert("※お知らせは配信されましたが、画像カラム(image_url)がSupabaseに未反映のため画像は除外されました。SupabaseでマイグレーションSQLを実行してください。");
+        }
+      }
 
       if (error) {
         alert("配信に失敗しました: " + error.message);
