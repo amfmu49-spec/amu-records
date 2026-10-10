@@ -18,6 +18,12 @@ export default function ProfilePage() {
   const [youtubeEmbedUrl, setYoutubeEmbedUrl] = useState("");
   const [tiktokEmbedUrl, setTiktokEmbedUrl] = useState("");
   const [mySongs, setMySongs] = useState<any[]>([]);
+  const [myPlaylists, setMyPlaylists] = useState<any[]>([]);
+  const [showCreatePlaylistModal, setShowCreatePlaylistModal] = useState(false);
+  const [newPlTitle, setNewPlTitle] = useState("");
+  const [newPlDesc, setNewPlDesc] = useState("");
+  const [newPlIsPublic, setNewPlIsPublic] = useState(true);
+  const [creatingPlaylist, setCreatingPlaylist] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -92,6 +98,28 @@ export default function ProfilePage() {
         
       if (songsData) {
         setMySongs(songsData);
+      }
+
+      // プレイリスト一覧の取得
+      const { data: playlistsData } = await supabase
+        .from("playlists")
+        .select(`
+          id,
+          title,
+          description,
+          is_public,
+          created_at,
+          playlist_songs(
+            id,
+            song_id,
+            songs:song_id(cover_url)
+          )
+        `)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (playlistsData) {
+        setMyPlaylists(playlistsData);
       }
     }
     loadProfile();
@@ -233,6 +261,63 @@ export default function ProfilePage() {
       alert("エラー: " + (err?.message || err));
     } finally {
       setAdminSending(false);
+    }
+  };
+
+  // プレイリスト新規作成
+  const handleCreatePlaylist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !newPlTitle.trim()) return;
+
+    try {
+      setCreatingPlaylist(true);
+      const { data: newPl, error } = await supabase
+        .from("playlists")
+        .insert([
+          {
+            user_id: user.id,
+            title: newPlTitle.trim(),
+            description: newPlDesc.trim() || null,
+            is_public: newPlIsPublic,
+          },
+        ])
+        .select(`
+          id,
+          title,
+          description,
+          is_public,
+          created_at,
+          playlist_songs(
+            id,
+            song_id,
+            songs:song_id(cover_url)
+          )
+        `)
+        .single();
+
+      if (error) throw error;
+
+      setMyPlaylists(prev => [newPl, ...prev]);
+      setNewPlTitle("");
+      setNewPlDesc("");
+      setShowCreatePlaylistModal(false);
+      alert("プレイリストを作成しました！");
+    } catch (err: any) {
+      alert("作成に失敗しました: " + (err.message || "エラー"));
+    } finally {
+      setCreatingPlaylist(false);
+    }
+  };
+
+  // プレイリスト削除
+  const handleDeletePlaylist = async (playlistId: string) => {
+    if (!confirm("このプレイリストを削除しますか？")) return;
+    try {
+      const { error } = await supabase.from("playlists").delete().eq("id", playlistId);
+      if (error) throw error;
+      setMyPlaylists(prev => prev.filter(p => p.id !== playlistId));
+    } catch (err: any) {
+      alert("削除に失敗しました: " + (err.message || "エラー"));
     }
   };
 
@@ -630,6 +715,177 @@ export default function ProfilePage() {
             </div>
           </div>
         )}
+
+        {/* 作成したプレイリスト管理セクション */}
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-sm mt-8">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+            <div>
+              <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-sm">
+                  🎧
+                </span>
+                作成したプレイリスト
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                お気に入りの曲を集めたプレイリストを作成して公開・共有できます
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCreatePlaylistModal(true)}
+              className="px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              <span>新規プレイリスト作成</span>
+            </button>
+          </div>
+
+          {/* プレイリスト作成フォーム */}
+          {showCreatePlaylistModal && (
+            <form onSubmit={handleCreatePlaylist} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 mb-6 space-y-3 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-sm text-slate-800">新しいプレイリストを作成</h4>
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePlaylistModal(false)}
+                  className="text-xs text-slate-400 hover:text-slate-600"
+                >
+                  ✕ 閉じる
+                </button>
+              </div>
+              <input
+                type="text"
+                placeholder="プレイリストのタイトル（例: 夜のチルアウトBGM）"
+                value={newPlTitle}
+                onChange={(e) => setNewPlTitle(e.target.value)}
+                required
+                maxLength={50}
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm bg-white focus:outline-none focus:border-indigo-500"
+              />
+              <textarea
+                placeholder="プレイリストの説明（任意）"
+                value={newPlDesc}
+                onChange={(e) => setNewPlDesc(e.target.value)}
+                rows={2}
+                maxLength={200}
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm bg-white focus:outline-none focus:border-indigo-500 resize-none"
+              />
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-600 select-none">
+                  <input
+                    type="checkbox"
+                    checked={newPlIsPublic}
+                    onChange={(e) => setNewPlIsPublic(e.target.checked)}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                  />
+                  <span>公開する（みんなに共有）</span>
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreatePlaylistModal(false)}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold text-slate-500 hover:bg-slate-200/60"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingPlaylist || !newPlTitle.trim()}
+                    className="px-4 py-1.5 rounded-full bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {creatingPlaylist ? "作成中..." : "作成する"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
+
+          {/* プレイリスト一覧グリッド */}
+          {myPlaylists.length === 0 ? (
+            <div className="text-center py-12 bg-slate-50/60 rounded-2xl border border-dashed border-slate-200">
+              <p className="text-slate-500 text-xs sm:text-sm font-medium mb-1">
+                まだプレイリストがありません
+              </p>
+              <p className="text-slate-400 text-xs">
+                右上の「新規プレイリスト作成」ボタン、または各曲の「追加」ボタンから作ることができます。
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+              {myPlaylists.map((pl) => {
+                const songCovers = (pl.playlist_songs || [])
+                  .map((ps: any) => ps.songs?.cover_url)
+                  .filter(Boolean);
+
+                return (
+                  <div
+                    key={pl.id}
+                    className="border border-slate-200 rounded-2xl p-4 bg-white hover:shadow-md hover:border-slate-300 transition-all flex flex-col justify-between group"
+                  >
+                    <div>
+                      <div className="flex items-center gap-3 mb-3">
+                        {/* カバーサムネイル */}
+                        <div className="w-12 h-12 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-100 flex items-center justify-center">
+                          {songCovers.length > 0 ? (
+                            <img src={songCovers[0]} alt="cover" className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-slate-400 text-lg">🎵</span>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <Link
+                            href={`/playlist/${pl.id}`}
+                            className="font-bold text-sm text-slate-900 hover:text-indigo-600 hover:underline truncate block"
+                          >
+                            {pl.title}
+                          </Link>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-md ${
+                              pl.is_public
+                                ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                                : "bg-amber-50 text-amber-600 border border-amber-200"
+                            }`}>
+                              {pl.is_public ? "🌐 公開" : "🔒 非公開"}
+                            </span>
+                            <span className="text-slate-400 text-[10px]">
+                              {pl.playlist_songs?.length || 0}曲
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {pl.description && (
+                        <p className="text-xs text-slate-500 line-clamp-2 mb-3">
+                          {pl.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100 mt-2">
+                      <Link
+                        href={`/playlist/${pl.id}`}
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                      >
+                        <span>再生・詳細</span>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePlaylist(pl.id)}
+                        className="text-[11px] font-semibold text-slate-400 hover:text-red-500 transition-colors"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* 管理者専用: お知らせ・アップデート一斉送信セクション */}
         {isAdmin ? (

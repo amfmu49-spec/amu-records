@@ -12,17 +12,19 @@ export default async function Home() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  // 並列で統計カウント、アーティスト一覧、楽曲データを取得
+  // 並列で統計カウント、アーティスト一覧、楽曲データ、公開プレイリストを取得
   const [
     { count: songCount },
     { data: profiles },
     { data: songs },
-    { data: rankedSongs }
+    { data: rankedSongs },
+    { data: publicPlaylists }
   ] = await Promise.all([
     supabase.from("songs").select("*", { count: "exact", head: true }),
     supabase.from("profiles").select("*").order("created_at", { ascending: false }),
     supabase.from("songs").select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(user_id), amu_comments(id)").order("created_at", { ascending: false }),
     supabase.from("songs").select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(user_id), amu_comments(id)").order("play_count", { ascending: false }).limit(5),
+    supabase.from("playlists").select("id, title, description, created_at, profiles:user_id(id, artist_name, avatar_url, role), playlist_songs(id, song_id, songs:song_id(cover_url))").eq("is_public", true).order("created_at", { ascending: false }).limit(6),
   ]);
 
   // アーティストごとの参加曲数を集計（単独＋コラボ参加含む）
@@ -106,6 +108,80 @@ export default async function Home() {
             
             <TrackList songs={rankedSongs || []} currentUserId={user?.id} showRank={true} />
           </div>
+
+          {/* 3. みんなのプレイリスト（公開プレイリスト） */}
+          {publicPlaylists && publicPlaylists.length > 0 && (
+            <div className="min-w-0">
+              <div className="flex items-center justify-between mb-4 sm:mb-8">
+                <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 sm:gap-3 text-slate-800 tracking-tight">
+                  <span className="w-8 h-8 rounded-full bg-purple-50 flex items-center justify-center border border-purple-100 text-purple-600">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    </svg>
+                  </span>
+                  注目のプレイリスト
+                </h2>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {publicPlaylists.map((pl: any) => {
+                  const covers = (pl.playlist_songs || [])
+                    .map((ps: any) => ps.songs?.cover_url)
+                    .filter(Boolean);
+
+                  return (
+                    <Link
+                      key={pl.id}
+                      href={`/playlist/${pl.id}`}
+                      className="group bg-white border border-slate-200/90 rounded-2xl p-4 transition-all duration-300 hover:shadow-lg hover:border-slate-300 flex flex-col justify-between"
+                    >
+                      <div className="flex items-center gap-3.5 mb-3">
+                        <div className="w-16 h-16 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-100 flex items-center justify-center relative shadow-xs">
+                          {covers.length >= 4 ? (
+                            <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
+                              {covers.slice(0, 4).map((url: string, i: number) => (
+                                <img key={i} src={url} alt="cover" className="w-full h-full object-cover" />
+                              ))}
+                            </div>
+                          ) : covers.length > 0 ? (
+                            <img src={covers[0]} alt="cover" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                          ) : (
+                            <span className="text-slate-400 text-xl">🎵</span>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-extrabold text-sm sm:text-base text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
+                            {pl.title}
+                          </h3>
+                          {pl.profiles && (
+                            <p className="text-xs text-slate-500 font-semibold truncate mt-0.5">
+                              by {pl.profiles.artist_name}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-purple-50 text-purple-600 border border-purple-100">
+                              {pl.playlist_songs?.length || 0}曲
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {pl.description && (
+                        <p className="text-xs text-slate-500 line-clamp-2 mt-1 mb-2">
+                          {pl.description}
+                        </p>
+                      )}
+
+                      <div className="flex items-center justify-end pt-2 border-t border-slate-100 text-xs font-bold text-indigo-600 group-hover:translate-x-0.5 transition-transform">
+                        <span>プレイリストを聴く →</span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </main>

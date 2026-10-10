@@ -6,6 +6,7 @@ import { createClient } from "@/utils/supabase/client";
 import { useState } from "react";
 import CommentSection from "@/components/CommentSection";
 import UserRoleBadge from "@/components/UserRoleBadge";
+import AddToPlaylistModal from "@/components/AddToPlaylistModal";
 
 export default function TrackList({ 
   songs, 
@@ -21,6 +22,7 @@ export default function TrackList({
   const { playSong, currentSong, isPlaying } = useAudioPlayer();
   const supabase = createClient();
   const [activeCommentSongId, setActiveCommentSongId] = useState<string | null>(null);
+  const [playlistSong, setPlaylistSong] = useState<any | null>(null);
   const [showAll, setShowAll] = useState(false);
 
   // 表示する楽曲リスト（limit指定時は展開トグル対応）
@@ -232,6 +234,18 @@ export default function TrackList({
                     </svg>
                     <span>詳細</span>
                   </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => setPlaylistSong(song)}
+                    className="flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border transition-all active:scale-95 text-[10px] sm:text-xs cursor-pointer select-none bg-slate-50 border-slate-100 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50/50 shrink-0"
+                    title="プレイリストに追加"
+                  >
+                    <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>追加</span>
+                  </button>
                 </div>
               </div>
 
@@ -287,6 +301,13 @@ export default function TrackList({
           </button>
         </div>
       )}
+      {/* プレイリスト追加モーダル */}
+      <AddToPlaylistModal
+        song={playlistSong}
+        isOpen={!!playlistSong}
+        onClose={() => setPlaylistSong(null)}
+        currentUserId={currentUserId}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useAudioPlayer } from "@/components/AudioPlayerProvider";
 import { createClient } from "@/utils/supabase/client";
 import Link from "next/link";
 import UserRoleBadge from "@/components/UserRoleBadge";
+import AddToPlaylistModal from "@/components/AddToPlaylistModal";
 
 interface SongDetailHeroProps {
   song: any;
@@ -27,6 +28,7 @@ export default function SongDetailHero({
   const [isLiked, setIsLiked] = useState(initialIsLiked);
   const [likeCount, setLikeCount] = useState(initialLikeCount);
   const [copied, setCopied] = useState(false);
+  const [showPlaylistModal, setShowPlaylistModal] = useState(false);
 
   const isThisPlaying = currentSong?.id === song.id && isPlaying;
 
@@ -280,6 +282,19 @@ export default function SongDetailHero({
               </svg>
               <span>{copied ? "コピー完了！" : "シェア"}</span>
             </button>
+
+            {/* プレイリスト追加 */}
+            <button
+              type="button"
+              onClick={() => setShowPlaylistModal(true)}
+              className="px-4 py-4 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white font-medium text-sm flex items-center gap-2 transition-all active:scale-95 select-none cursor-pointer"
+              title="プレイリストに追加"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              <span>リスト追加</span>
+            </button>
           </div>
 
           {/* SNSシェアボタン群 */}
@@ -322,6 +337,13 @@ export default function SongDetailHero({
           </p>
         </div>
       )}
+      {/* プレイリスト追加モーダル */}
+      <AddToPlaylistModal
+        song={song}
+        isOpen={showPlaylistModal}
+        onClose={() => setShowPlaylistModal(false)}
+        currentUserId={currentUserId}
+      />
     </div>
   );
 }
