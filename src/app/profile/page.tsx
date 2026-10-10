@@ -26,6 +26,9 @@ export default function ProfilePage() {
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [removeBanner, setRemoveBanner] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [hasProfile, setHasProfile] = useState(false);
@@ -72,6 +75,9 @@ export default function ProfilePage() {
         setTiktokEmbedUrl(profile.tiktok_embed_url || "");
         if (profile.avatar_url) {
           setAvatarPreview(profile.avatar_url);
+        }
+        if (profile.banner_url) {
+          setBannerPreview(profile.banner_url);
         }
       } else {
         // デフォルト名
@@ -133,6 +139,21 @@ export default function ProfilePage() {
     }
   };
 
+  const handleBannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      setBannerFile(file);
+      setBannerPreview(URL.createObjectURL(file));
+      setRemoveBanner(false);
+    }
+  };
+
+  const handleRemoveBanner = () => {
+    setBannerFile(null);
+    setBannerPreview(null);
+    setRemoveBanner(true);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !artistName) return;
@@ -142,6 +163,7 @@ export default function ProfilePage() {
 
     try {
       let finalAvatarUrl = avatarPreview;
+      let finalBannerUrl = removeBanner ? null : bannerPreview;
 
       // アバターのアップロード
       if (avatarFile) {
@@ -153,13 +175,32 @@ export default function ProfilePage() {
           .from("avatars")
           .upload(filePath, avatarFile);
         
-        if (uploadError) throw new Error("画像のアップロードに失敗しました");
+        if (uploadError) throw new Error("アイコン画像のアップロードに失敗しました");
 
         const { data: { publicUrl } } = supabase.storage
           .from("avatars")
           .getPublicUrl(filePath);
           
         finalAvatarUrl = publicUrl;
+      }
+
+      // 背景バナー画像のアップロード
+      if (bannerFile) {
+        const ext = bannerFile.name.split('.').pop() || 'jpg';
+        const uniqueName = `banner_${uuidv4()}.${ext}`;
+        const filePath = `${user.id}/${uniqueName}`;
+        
+        const { error: uploadBannerError } = await supabase.storage
+          .from("avatars")
+          .upload(filePath, bannerFile);
+        
+        if (uploadBannerError) throw new Error("背景画像のアップロードに失敗しました");
+
+        const { data: { publicUrl: bannerPublicUrl } } = supabase.storage
+          .from("avatars")
+          .getPublicUrl(filePath);
+          
+        finalBannerUrl = bannerPublicUrl;
       }
 
       // プロトコル検証（XSS・オープンリダイレクト対策）
@@ -184,6 +225,7 @@ export default function ProfilePage() {
           id: user.id,
           artist_name: artistName.trim(),
           avatar_url: finalAvatarUrl,
+          banner_url: finalBannerUrl,
           tiktok_url: tiktokUrl.trim() || null,
           youtube_url: youtubeUrl.trim() || null,
           suno_url: sunoUrl.trim() || null,
@@ -487,9 +529,75 @@ export default function ProfilePage() {
                 )}
               </div>
               <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-full text-sm font-semibold transition-colors">
-                画像を変更
+                アイコン画像を変更
                 <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
               </label>
+            </div>
+
+            {/* アーティストページの背景画像（ヘッダーバナー） */}
+            <div className="pt-2">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-bold text-slate-800">
+                  アーティストページの背景画像
+                </label>
+                {bannerPreview && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveBanner}
+                    className="text-xs font-semibold text-rose-500 hover:text-rose-700 transition-colors cursor-pointer"
+                  >
+                    背景をリセット
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+                あなたのアーティストページ最上部のヘッダー背景を自由にカスタマイズできます。
+              </p>
+
+              {/* 推奨サイズバッジ案内 */}
+              <div className="flex items-center gap-2 bg-indigo-50/70 border border-indigo-100/80 px-3.5 py-2.5 rounded-xl text-xs text-indigo-900 mb-3 font-medium">
+                <svg className="w-4 h-4 text-indigo-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>
+                  <b>推奨画像サイズ:</b> 1920 × 600 px（横長比率 16:5〜16:9）/ 5MB以内のJPG・PNG・WebP
+                </span>
+              </div>
+
+              {/* バナー画像プレビュー枠 */}
+              <div className="relative w-full h-36 sm:h-44 rounded-2xl overflow-hidden bg-slate-100 border-2 border-dashed border-slate-200 group flex items-center justify-center">
+                {bannerPreview ? (
+                  <>
+                    <img src={bannerPreview} alt="Banner Preview" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                      <label className="cursor-pointer bg-white/90 hover:bg-white text-slate-900 px-4 py-2 rounded-full text-xs font-bold transition-all shadow-md active:scale-95">
+                        画像を変更
+                        <input type="file" accept="image/*" onChange={handleBannerChange} className="hidden" />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleRemoveBanner}
+                        className="bg-red-500/90 hover:bg-red-500 text-white px-4 py-2 rounded-full text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors p-4 text-center">
+                    <svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="text-xs font-bold text-indigo-600 hover:underline">
+                      クリックして背景画像をアップロード
+                    </span>
+                    <span className="text-[11px] text-slate-400 mt-0.5">
+                      横長のワイド画像が綺麗にフィットします
+                    </span>
+                    <input type="file" accept="image/*" onChange={handleBannerChange} className="hidden" />
+                  </label>
+                )}
+              </div>
             </div>
 
             {/* 表示名 / クリエイター名 */}

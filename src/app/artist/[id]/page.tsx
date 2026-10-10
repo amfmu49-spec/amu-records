@@ -72,7 +72,17 @@ export default async function ArtistPage({ params }: { params: Promise<{ id: str
       </header>
 
       <div className="max-w-4xl mx-auto px-6 py-12">
-        <div className="bg-white border border-slate-200 rounded-[2rem] p-8 sm:p-12 shadow-sm mb-12 flex flex-col sm:flex-row items-center gap-8 relative overflow-hidden">
+        <div className={`border rounded-[2rem] p-8 sm:p-12 shadow-sm mb-12 flex flex-col sm:flex-row items-center gap-8 relative overflow-hidden transition-all ${
+          profile.banner_url ? "border-slate-800 shadow-xl" : "bg-white border-slate-200 text-slate-900"
+        }`}>
+          {/* 背景画像がある場合: フルカバー表示 ＋ ダークグラデーションオーバーレイ */}
+          {profile.banner_url && (
+            <div className="absolute inset-0 z-0">
+              <img src={profile.banner_url} alt="Banner" className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/95 via-slate-950/70 to-slate-900/40 backdrop-blur-[1px]"></div>
+            </div>
+          )}
+
           <div className="w-32 h-32 sm:w-48 sm:h-48 rounded-full overflow-hidden bg-slate-100 border-4 border-white shadow-xl shrink-0 z-10">
             {profile.avatar_url ? (
               <img src={profile.avatar_url} alt={profile.artist_name} className="w-full h-full object-cover" />
@@ -83,8 +93,10 @@ export default async function ArtistPage({ params }: { params: Promise<{ id: str
 
           <div className="flex-1 text-center sm:text-left z-10">
             <div className="flex items-center justify-center sm:justify-start gap-3 mb-4 flex-wrap">
-              <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">{profile.artist_name}</h2>
-              <UserRoleBadge role={profile.role || "creator"} size="sm" />
+              <h2 className={`text-3xl sm:text-4xl font-black tracking-tight ${profile.banner_url ? "text-white drop-shadow-md" : "text-slate-900"}`}>
+                {profile.artist_name}
+              </h2>
+              <UserRoleBadge role={profile.role || "creator"} size="sm" theme={profile.banner_url ? "dark" : "light"} />
             </div>
             
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 mb-6">
@@ -104,7 +116,9 @@ export default async function ArtistPage({ params }: { params: Promise<{ id: str
                 </a>
               )}
               {!safeTiktok && !safeYoutube && !safeSuno && (
-                <span className="text-slate-400 text-sm">リンクは設定されていません</span>
+                <span className={`text-sm ${profile.banner_url ? "text-slate-300" : "text-slate-400"}`}>
+                  リンクは設定されていません
+                </span>
               )}
             </div>
 
