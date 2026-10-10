@@ -46,7 +46,7 @@ export default function PlaylistDetailPage({
           is_public,
           user_id,
           created_at,
-          profiles:user_id (
+          profiles:profiles!fk_playlist_profile (
             id,
             artist_name,
             avatar_url,
@@ -73,7 +73,7 @@ export default function PlaylistDetailPage({
         .select(`
           id,
           position,
-          songs:song_id (
+          songs:songs!fk_playlist_song (
             id,
             title,
             artist,
@@ -81,19 +81,19 @@ export default function PlaylistDetailPage({
             cover_url,
             play_count,
             user_id,
-            profiles:user_id (
+            profiles:profiles!fk_user_profile (
               id,
               artist_name,
               avatar_url,
               role
             ),
-            co_artist_1:co_artist_id_1 (
+            co_artist_1:profiles!songs_co_artist_id_1_fkey (
               id,
               artist_name,
               avatar_url,
               role
             ),
-            co_artist_2:co_artist_id_2 (
+            co_artist_2:profiles!songs_co_artist_id_2_fkey (
               id,
               artist_name,
               avatar_url,

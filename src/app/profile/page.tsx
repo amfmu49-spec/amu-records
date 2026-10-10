@@ -112,7 +112,7 @@ export default function ProfilePage() {
           playlist_songs(
             id,
             song_id,
-            songs:song_id(cover_url)
+            songs:songs!fk_playlist_song(cover_url)
           )
         `)
         .eq("user_id", user.id)
@@ -290,7 +290,7 @@ export default function ProfilePage() {
           playlist_songs(
             id,
             song_id,
-            songs:song_id(cover_url)
+            songs:songs!fk_playlist_song(cover_url)
           )
         `)
         .single();

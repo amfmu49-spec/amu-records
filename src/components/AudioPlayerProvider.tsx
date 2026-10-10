@@ -122,9 +122,23 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     playlistRef.current = playlist;
   }, [playlist]);
 
-  // 再生回数のインクリメント
+  // 再生回数のインクリメント（同じ端末・ブラウザからは1曲につき1日1回のみカウント）
   const incrementPlayCount = (songId: string) => {
     try {
+      if (typeof window === "undefined") return;
+
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const storageKey = `amu_play_${songId}`;
+
+      const lastPlayedDate = localStorage.getItem(storageKey);
+      if (lastPlayedDate === todayStr) {
+        // 今日すでにこの端末で再生カウント済みなのでスキップ
+        return;
+      }
+
+      // 今日初めての再生：今日の日付を保存してカウントアップ
+      localStorage.setItem(storageKey, todayStr);
       const supabase = createClient();
       supabase.rpc("increment_play_count", { song_id_param: songId }).then();
     } catch (e) {
