@@ -41,6 +41,8 @@ export default function ProfilePage() {
   const [adminCategory, setAdminCategory] = useState<"update" | "notice" | "event" | "maintenance">("update");
   const [adminLinkUrl, setAdminLinkUrl] = useState("");
   const [adminIsPinned, setAdminIsPinned] = useState(false);
+  const [adminImageFile, setAdminImageFile] = useState<File | null>(null);
+  const [adminImagePreview, setAdminImagePreview] = useState<string | null>(null);
   const [adminSending, setAdminSending] = useState(false);
   const [adminPasscode, setAdminPasscode] = useState("");
   const [showAdminPassInput, setShowAdminPassInput] = useState(false);
@@ -278,12 +280,30 @@ export default function ProfilePage() {
 
     try {
       setAdminSending(true);
+
+      let finalImageUrl: string | null = null;
+      if (adminImageFile) {
+        const ext = adminImageFile.name.split('.').pop() || 'jpg';
+        const filePath = `announcements/${uuidv4()}.${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from("avatars")
+          .upload(filePath, adminImageFile);
+
+        if (uploadError) throw new Error("画像のアップロードに失敗しました: " + uploadError.message);
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("avatars")
+          .getPublicUrl(filePath);
+        finalImageUrl = publicUrl;
+      }
+
       const { error } = await supabase.from("announcements").insert([
         {
           title: adminTitle.trim(),
           content: adminContent.trim(),
           category: adminCategory,
           link_url: adminLinkUrl.trim() || null,
+          image_url: finalImageUrl,
           is_pinned: adminIsPinned,
           created_by: user?.id,
         },
@@ -299,6 +319,8 @@ export default function ProfilePage() {
       setAdminContent("");
       setAdminLinkUrl("");
       setAdminIsPinned(false);
+      setAdminImageFile(null);
+      setAdminImagePreview(null);
     } catch (err: any) {
       alert("エラー: " + (err?.message || err));
     } finally {
@@ -1068,6 +1090,63 @@ export default function ProfilePage() {
                   className="w-full px-4 py-2.5 text-sm rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 h-28 resize-none leading-relaxed"
                   required
                 />
+              </div>
+
+              {/* 画像添付（任意） */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-300">画像添付（任意） 🖼️</label>
+                  {adminImagePreview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdminImageFile(null);
+                        setAdminImagePreview(null);
+                      }}
+                      className="text-[11px] text-red-400 hover:text-red-300 underline cursor-pointer"
+                    >
+                      画像を削除
+                    </button>
+                  )}
+                </div>
+
+                {adminImagePreview ? (
+                  <div className="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950 p-2 flex items-center justify-center">
+                    <img
+                      src={adminImagePreview}
+                      alt="添付画像プレビュー"
+                      className="max-h-48 w-full object-contain rounded-lg"
+                    />
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-850 hover:bg-slate-800 transition-colors">
+                    <div className="flex flex-col items-center justify-center py-2 text-center">
+                      <svg className="w-6 h-6 mb-1 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                      </svg>
+                      <p className="text-xs text-slate-300 font-semibold">
+                        クリックしてお知らせ画像を添付
+                      </p>
+                      <p className="text-[10px] text-slate-500">PNG, JPG, GIF, WebP (最大5MB)</p>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          const file = e.target.files[0];
+                          if (file.size > 5 * 1024 * 1024) {
+                            alert("画像サイズは5MB以下にしてください");
+                            return;
+                          }
+                          setAdminImageFile(file);
+                          setAdminImagePreview(URL.createObjectURL(file));
+                        }
+                      }}
+                    />
+                  </label>
+                )}
               </div>
 
               {/* リンクURL */}

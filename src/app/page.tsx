@@ -6,6 +6,7 @@ import RandomPlayButton from "@/components/RandomPlayButton";
 import HeroPlayer from "@/components/HeroPlayer";
 import CommunityStatsBar from "@/components/CommunityStatsBar";
 import SongSearchSection from "@/components/SongSearchSection";
+import CommunityBoard from "@/components/CommunityBoard";
 import { connection } from "next/server";
 
 export default async function Home() {
@@ -207,6 +208,9 @@ export default async function Home() {
             </div>
           </div>
         </SongSearchSection>
+
+        {/* サイト下部コミュニティ掲示板 */}
+        <CommunityBoard />
       </div>
     </main>
   );

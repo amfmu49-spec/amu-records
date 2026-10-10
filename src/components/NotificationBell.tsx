@@ -3,12 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/utils/supabase/client";
+import { v4 as uuidv4 } from "uuid";
 
 interface Announcement {
   id: string;
   title: string;
   content: string;
   category: "update" | "notice" | "event" | "maintenance" | string;
+  image_url?: string | null;
   link_url?: string | null;
   is_pinned?: boolean;
   created_at: string;
@@ -37,6 +39,8 @@ export default function NotificationBell() {
   const [newTitle, setNewTitle] = useState("");
   const [newContent, setNewContent] = useState("");
   const [newCategory, setNewCategory] = useState<"update" | "notice" | "event" | "maintenance">("update");
+  const [newImageFile, setNewImageFile] = useState<File | null>(null);
+  const [newImagePreview, setNewImagePreview] = useState<string | null>(null);
   const [newLinkUrl, setNewLinkUrl] = useState("");
   const [newIsPinned, setNewIsPinned] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -140,11 +144,30 @@ export default function NotificationBell() {
 
     try {
       setIsSubmitting(true);
+
+      let finalImageUrl: string | null = null;
+      if (newImageFile) {
+        const ext = newImageFile.name.split('.').pop() || 'jpg';
+        const filePath = `announcements/${uuidv4()}.${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from("avatars")
+          .upload(filePath, newImageFile);
+
+        if (uploadError) throw new Error("画像のアップロードに失敗しました");
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("avatars")
+          .getPublicUrl(filePath);
+
+        finalImageUrl = publicUrl;
+      }
+
       const { data, error } = await supabase.from("announcements").insert([
         {
           title: newTitle.trim(),
           content: newContent.trim(),
           category: newCategory,
+          image_url: finalImageUrl,
           link_url: newLinkUrl.trim() || null,
           is_pinned: newIsPinned,
           created_by: user?.id || null,
@@ -159,6 +182,8 @@ export default function NotificationBell() {
       alert("🎉 全ユーザーへお知らせを一斉配信しました！");
       setNewTitle("");
       setNewContent("");
+      setNewImageFile(null);
+      setNewImagePreview(null);
       setNewLinkUrl("");
       setNewIsPinned(false);
       setShowAdminForm(false);
@@ -388,6 +413,49 @@ export default function NotificationBell() {
                   />
                 </div>
 
+                {/* 画像添付（任意） */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[11px] font-bold text-slate-700">添付画像（任意）</span>
+                    {newImagePreview && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewImageFile(null);
+                          setNewImagePreview(null);
+                        }}
+                        className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                      >
+                        画像を削除
+                      </button>
+                    )}
+                  </div>
+                  {newImagePreview ? (
+                    <div className="relative w-full h-28 rounded-xl overflow-hidden bg-slate-100 border border-slate-200">
+                      <img src={newImagePreview} alt="Preview" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <label className="flex items-center justify-center gap-1.5 w-full py-2 border border-dashed border-slate-300 rounded-xl text-xs text-slate-500 hover:bg-slate-50 cursor-pointer transition-colors">
+                      <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span>画像を選択（ポスターやジャケットなど）</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            const file = e.target.files[0];
+                            setNewImageFile(file);
+                            setNewImagePreview(URL.createObjectURL(file));
+                          }
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+
                 {/* 詳細リンク（任意） */}
                 <div>
                   <input
@@ -463,6 +531,19 @@ export default function NotificationBell() {
                       <p className="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-wrap mb-2.5">
                         {item.content}
                       </p>
+
+                      {/* 添付画像 */}
+                      {item.image_url && (
+                        <div className="mb-3 rounded-xl overflow-hidden bg-slate-100 border border-slate-200/80 max-h-60 sm:max-h-72">
+                          <img
+                            src={item.image_url}
+                            alt={item.title}
+                            className="w-full h-full object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                            onClick={() => window.open(item.image_url!, "_blank")}
+                            title="画像をクリックして原寸大表示"
+                          />
+                        </div>
+                      )}
 
                       <div className="flex items-center justify-between pt-1">
                         {item.link_url ? (
