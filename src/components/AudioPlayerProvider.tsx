@@ -27,6 +27,7 @@ type AudioPlayerContextType = {
   playPrevSong: () => void;
   startRandomPlay: (songs: any[]) => void;
   setPlaylist: (songs: any[]) => void;
+  getExactTime: () => number;
 };
 
 const AudioPlayerContext = createContext<AudioPlayerContextType>({
@@ -44,6 +45,7 @@ const AudioPlayerContext = createContext<AudioPlayerContextType>({
   playPrevSong: () => {},
   startRandomPlay: () => {},
   setPlaylist: () => {},
+  getExactTime: () => 0,
 });
 
 export const useAudioPlayer = () => useContext(AudioPlayerContext);
@@ -727,6 +729,12 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
 
   const displayProgress = isDragging ? dragProgress : progress;
 
+  // 60fps/120fpsアニメーション同期用：ミリ秒単位の真の現在再生時刻を即時返却
+  const getExactTime = useCallback(() => {
+    const audio = activeDeckRef.current === "A" ? audioRefA.current : audioRefB.current;
+    return audio ? (audio.currentTime || 0) : 0;
+  }, []);
+
   return (
     <AudioPlayerContext.Provider
       value={{
@@ -744,6 +752,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         playPrevSong,
         startRandomPlay,
         setPlaylist,
+        getExactTime,
       }}
     >
       {children}

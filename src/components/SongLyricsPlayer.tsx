@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useAudioPlayer } from "@/components/AudioPlayerProvider";
 import { parseLrc, findActiveLyricIndex, formatSecondsToTimestamp } from "@/utils/lrcParser";
 
@@ -16,7 +16,7 @@ interface SongLyricsPlayerProps {
 }
 
 export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlayerProps) {
-  const { currentSong, isPlaying, currentTime, togglePlay, playSong, seekTo } = useAudioPlayer();
+  const { currentSong, isPlaying, currentTime, togglePlay, playSong, seekTo, getExactTime } = useAudioPlayer();
   const [viewMode, setViewMode] = useState<"lyrimo" | "highlight">("lyrimo");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isEngineLoaded, setIsEngineLoaded] = useState(false);
@@ -44,6 +44,7 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
   const planRef = useRef<any>(null);
   const rendererRef = useRef<any>(null);
   const animFrameIdRef = useRef<number | null>(null);
+  const scaleRef = useRef<number>(0.5);
 
   // 1. Lyrimo エンジンスクリプト (/lib/lyrimo.js) の動的読み込み
   useEffect(() => {
@@ -72,7 +73,7 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
     document.body.appendChild(script);
   }, []);
 
-  // 2. 「勝手にお任せ」でLyrimoプロジェクト＆カット割りプランを自動生成
+  // 2. 「勝手にお任せ」でLyrimoプロジェクト＆カット割りプランを自動生成（60fpsフルフレーム化）
   useEffect(() => {
     if (!isEngineLoaded || typeof window === "undefined") return;
     const J = (window as any).J;
@@ -85,15 +86,21 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
         lyrics: syncedLyrics && syncedLyrics.trim().length > 0 ? syncedLyrics : song.title,
         aspect: "16:9",
         res: 1080,
-        fps: 30,
-        seed: Math.floor(Math.random() * 9999999), // 開くたびに新鮮なシード
+        fps: 60, // ★ 60fpsフルレート
+        seed: Math.floor(Math.random() * 9999999),
       });
 
-      // ★ ユーザー指示：「お任せボタンもいらない。リリモモードにしたら勝手にお任せで流して」
-      // 毎回自動で omakase を実行し、最高にエモいスタイル・配色・動きを自動構成
+      // ★ ユーザー指示：「勝手にお任せで流して」
       if (J.omakase) {
         J.omakase(project);
       }
+
+      // ★ 超重要：Lyrimoのデフォルト12fpsコマ落ち制限を解除し、60fpsフル滑らか描画を強制！
+      if (project.fx) {
+        project.fx.koma = 0; // 0 = 毎フレーム描画（コマ落ちなし）
+        project.fx.onTwos = false; // 2コマ打ち解除
+      }
+      project.fps = 60;
 
       const plan = J.plan(project);
       planRef.current = plan;
@@ -110,61 +117,89 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
     }
   }, [isEngineLoaded, song.id, song.title, song.artist, syncedLyrics]);
 
-  // 3. Canvasへの毎フレーム描画ループ（再生時間 currentTime と完全同期）
-  const renderFrame = useCallback(() => {
-    const canvas = canvasRef.current;
-    const plan = planRef.current;
-    const renderer = rendererRef.current;
+  // 3. コンテナのリサイズ監視でCanvasサイズを事前固定（毎フレームのレイアウト再計算を完全防止）
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !isPlanReady) return;
 
-    if (!canvas || !plan || !renderer) return;
+    const updateCanvasSize = () => {
+      const canvas = canvasRef.current;
+      const plan = planRef.current;
+      if (!canvas || !plan) return;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+      const rect = container.getBoundingClientRect();
+      const cssW = Math.max(320, rect.width || 640);
+      const dpr = Math.min(1.5, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
+      const targetW = Math.round(cssW * dpr);
+      const targetH = Math.round((targetW * plan.H) / plan.W);
+      const scale = targetW / plan.W;
 
-    // キャンバス表示幅に合わせたスケーリング（高解像度維持）
-    const rect = canvas.getBoundingClientRect();
-    const displayWidth = Math.max(320, rect.width || 640);
-    const targetScale = Math.min(1.0, displayWidth / plan.W);
+      scaleRef.current = scale;
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+    };
 
-    const neededW = Math.round(plan.W * targetScale);
-    const neededH = Math.round(plan.H * targetScale);
+    const ro = new ResizeObserver(() => {
+      updateCanvasSize();
+    });
+    ro.observe(container);
+    updateCanvasSize();
 
-    if (canvas.width !== neededW || canvas.height !== neededH) {
-      canvas.width = neededW;
-      canvas.height = neededH;
-    }
+    return () => ro.disconnect();
+  }, [isPlanReady, isFullscreen]);
 
-    // 現在の再生時刻を取得（この曲が再生中でなければ 0 秒地点）
-    const timeToDraw = isThisSongActive ? currentTime : 0;
-
-    try {
-      renderer.frame(ctx, plan, timeToDraw, { scale: targetScale });
-    } catch {
-      // 描画エラー時はスキップ
-    }
-  }, [isThisSongActive, currentTime]);
-
-  // 再生中またはシーク時のアニメーションフレーム
+  // 4. 超高精度 60fps/120fps requestAnimationFrame ループ
   useEffect(() => {
     if (viewMode !== "lyrimo" || !isPlanReady) return;
 
-    renderFrame();
+    let slowCount = 0;
+    let isSlow = false;
+
+    const drawSingleFrame = () => {
+      const canvas = canvasRef.current;
+      const plan = planRef.current;
+      const renderer = rendererRef.current;
+
+      if (!canvas || !plan || !renderer) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      // ★ getExactTime() で生のマイクロ秒単位の再生時刻を毎フレーム取得！
+      const t = isThisSongActive ? getExactTime() : 0;
+      const t0 = performance.now();
+
+      try {
+        renderer.frame(ctx, plan, t, { scale: scaleRef.current, fast: isSlow });
+      } catch {
+        // ignore
+      }
+
+      const dt = performance.now() - t0;
+      if (dt > 25) slowCount++;
+      else if (slowCount > 0) slowCount--;
+      isSlow = slowCount > 4;
+    };
 
     if (isThisSongActive && isPlaying) {
       const loop = () => {
-        renderFrame();
+        drawSingleFrame();
         animFrameIdRef.current = requestAnimationFrame(loop);
       };
       animFrameIdRef.current = requestAnimationFrame(loop);
-
-      return () => {
-        if (animFrameIdRef.current) {
-          cancelAnimationFrame(animFrameIdRef.current);
-          animFrameIdRef.current = null;
-        }
-      };
+    } else {
+      // 一時停止時やシーク時は現在の静止画を即座に1回描画
+      drawSingleFrame();
     }
-  }, [viewMode, isPlanReady, isThisSongActive, isPlaying, renderFrame]);
+
+    return () => {
+      if (animFrameIdRef.current) {
+        cancelAnimationFrame(animFrameIdRef.current);
+        animFrameIdRef.current = null;
+      }
+    };
+  }, [viewMode, isPlanReady, isThisSongActive, isPlaying, getExactTime, currentTime]);
 
   // ハイライトモード時の自動スクロール
   useEffect(() => {
@@ -228,14 +263,13 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
 
   return (
     <div
-      ref={containerRef}
       className={`transition-all duration-300 ${
         isFullscreen
           ? "fixed inset-0 z-[100] bg-slate-950 p-4 sm:p-8 flex flex-col justify-between"
           : "bg-white rounded-3xl p-5 sm:p-7 border border-slate-200 shadow-xs"
       }`}
     >
-      {/* ヘッダー操作パネル（余計なボタンは置かずシンプルに） */}
+      {/* ヘッダー操作パネル */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
         <div className="flex items-center gap-2 flex-wrap">
           {/* モード切り替えタブ */}
@@ -297,9 +331,10 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
         </div>
       </div>
 
-      {/* ＝＝＝ モード 1: 🔥 Lyrimo（リリモ）本物の文字PV Canvasステージ ＝＝＝ */}
+      {/* ＝＝＝ モード 1: 🔥 Lyrimo（リリモ）60fps 超スムーズ Canvasステージ ＝＝＝ */}
       {viewMode === "lyrimo" && (
         <div
+          ref={containerRef}
           className={`relative overflow-hidden rounded-2xl flex items-center justify-center select-none bg-black transition-all ${
             isFullscreen
               ? "flex-1 w-full"
@@ -310,7 +345,7 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
           {/* Lyrimo 本物のキャンバス描画ステージ */}
           <canvas
             ref={canvasRef}
-            className="w-full h-full object-contain cursor-pointer"
+            className="w-full h-full object-contain cursor-pointer block"
           />
 
           {/* 未再生時 / 一時停止時のスマートなオーバーレイ案内 */}
@@ -328,7 +363,7 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
           {/* Lyrimo エンジンバッジ */}
           <div className="absolute top-3.5 left-3.5 z-20 flex items-center gap-2 pointer-events-none">
             <span className="text-[10px] font-mono tracking-widest text-indigo-300 bg-slate-900/80 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-indigo-500/30">
-              ⚡ LYRIMO ENGINE
+              ⚡ 60FPS LYRIMO ENGINE
             </span>
           </div>
         </div>
