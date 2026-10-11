@@ -11,6 +11,7 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [syncedLyrics, setSyncedLyrics] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [message, setMessage] = useState("");
   
@@ -150,7 +151,7 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
       }
 
       // 3. Database Insert
-      const { error: dbError } = await supabase.from("songs").insert([{
+      const payload: any = {
         title: title.trim(),
         description: description.trim(),
         file_url: songUrl,
@@ -158,7 +159,24 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
         user_id: userId,
         co_artist_id_1: coArtist1 || null,
         co_artist_id_2: coArtist2 || null,
-      }]);
+      };
+
+      if (syncedLyrics.trim()) {
+        payload.synced_lyrics = syncedLyrics.trim();
+      }
+
+      let { error: dbError } = await supabase.from("songs").insert([payload]);
+
+      // もし DB に synced_lyrics カラムがまだ作成されていない場合のフォールバック（自動再試行）
+      if (dbError && (dbError.message?.includes("synced_lyrics") || dbError.details?.includes("synced_lyrics") || dbError.code === "PGRST204")) {
+        console.warn("Retrying song insert without synced_lyrics column...");
+        delete payload.synced_lyrics;
+        const retry = await supabase.from("songs").insert([payload]);
+        dbError = retry.error;
+        if (!dbError) {
+          alert("※楽曲はアップロードされましたが、タイムスタンプ歌詞カラム(synced_lyrics)がSupabaseに未反映のため歌詞は除外されました。SupabaseでマイグレーションSQLを実行してください。");
+        }
+      }
 
       if (dbError) throw dbError;
 
@@ -167,6 +185,7 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
       setCoverFile(null);
       setTitle("");
       setDescription("");
+      setSyncedLyrics("");
       setCoArtist1("");
       setCoArtist2("");
       router.refresh();
@@ -324,7 +343,60 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
               maxLength={1000}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 transition-all resize-none h-24 placeholder-slate-400 text-sm sm:text-base"
-              placeholder="曲に込めた想いや、歌詞などを自由に入力してください (1000文字以内)"
+              placeholder="曲に込めた想いなどを自由に入力してください (1000文字以内)"
+              disabled={isUploading}
+            />
+          </div>
+
+          {/* タイムスタンプ付き歌詞（任意） */}
+          <div className="bg-indigo-50/50 rounded-2xl p-4 sm:p-5 border border-indigo-100/80 space-y-2.5">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <label className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <span>🎙️</span>
+                <span>タイムスタンプ付き歌詞 (任意)</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                  リリモ連動
+                </span>
+              </label>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSyncedLyrics(
+`[00:00.00] (イントロ)
+[00:12.50] 静かな夜の街を歩く
+[00:18.20] ネオンが滲む雨上がり
+[00:24.00] 君の声がどこかで聴こえた気がした
+[00:32.10] 振り返る交差点の真ん中で
+[00:38.00] あのメロディが胸に響いている`
+                    );
+                  }}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
+                >
+                  💡 入力例をセット
+                </button>
+                {syncedLyrics && (
+                  <button
+                    type="button"
+                    onClick={() => setSyncedLyrics("")}
+                    className="text-xs text-slate-400 hover:text-red-500 font-bold cursor-pointer"
+                  >
+                    クリア
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              [分:秒] または [分:秒.ミリ秒] 形式で行頭に時間を記入すると、曲詳細ページでApple Musicやリリモのような美しいリアルタイム歌詞演出が自動で作動します！
+            </p>
+
+            <textarea
+              value={syncedLyrics}
+              onChange={(e) => setSyncedLyrics(e.target.value)}
+              className="w-full bg-white border border-indigo-200/80 rounded-xl p-3.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-mono text-xs sm:text-sm h-36 leading-relaxed placeholder-slate-400"
+              placeholder={`[00:12.50] 歌詞のテキスト\n[00:18.00] 次のフレーズ\n[00:24.30] サビの盛り上がり...`}
               disabled={isUploading}
             />
           </div>

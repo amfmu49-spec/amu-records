@@ -7,6 +7,7 @@ import AuthButton from "@/components/AuthButton";
 import SongDetailHero from "@/components/SongDetailHero";
 import CommentSection from "@/components/CommentSection";
 import TrackList from "@/components/TrackList";
+import SongLyricsPlayer from "@/components/SongLyricsPlayer";
 
 interface SongPageProps {
   params: Promise<{ id: string }>;
@@ -108,6 +109,13 @@ export default async function SongPage({ params }: SongPageProps) {
       ? `${song.profiles?.artist_name || "このクリエイター"}の他の楽曲`
       : "人気の他の楽曲";
 
+  const artists = [
+    song.profiles?.artist_name,
+    song.co_artist_1?.artist_name,
+    song.co_artist_2?.artist_name,
+  ].filter(Boolean);
+  const artistName = artists.length > 0 ? artists.join(" × ") : (song.artist || "Unknown Artist");
+
   return (
     <main className="min-h-screen bg-slate-50/50 text-slate-900 pb-32 font-sans">
       {/* グローバルヘッダー */}
@@ -148,6 +156,20 @@ export default async function SongPage({ params }: SongPageProps) {
           currentUserId={user?.id}
           commentCount={commentCount}
         />
+
+        {/* リアルタイム歌詞同期プレイヤー（リリモモード ＆ ハイライトモード） */}
+        <div className="mb-12">
+          <SongLyricsPlayer
+            syncedLyrics={song.synced_lyrics}
+            song={{
+              id: song.id,
+              title: song.title,
+              file_url: song.file_url,
+              cover_url: song.cover_url,
+              artist: artistName,
+            }}
+          />
+        </div>
 
         {/* コメントセクション */}
         <div className="bg-white rounded-[2rem] border border-slate-200 p-6 sm:p-10 shadow-sm mb-12">

@@ -19,6 +19,7 @@ type AudioPlayerContextType = {
   currentTime: number;
   duration: number;
   playSong: (song: Song, playlist?: any[]) => void;
+  seekTo: (seconds: number) => void;
   togglePlay: () => void;
   toggleRandom: () => void;
   playNextSong: () => void;
@@ -35,6 +36,7 @@ const AudioPlayerContext = createContext<AudioPlayerContextType>({
   currentTime: 0,
   duration: 0,
   playSong: () => {},
+  seekTo: () => {},
   togglePlay: () => {},
   toggleRandom: () => {},
   playNextSong: () => {},
@@ -575,6 +577,18 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     setCurrentTime(targetTime);
   };
 
+  // タイムスタンプ指定ジャンプ（リリック同期用）
+  const seekTo = useCallback((targetSeconds: number) => {
+    const activeAudio = activeDeckRef.current === "A" ? audioRefA.current : audioRefB.current;
+    if (!activeAudio || isNaN(targetSeconds)) return;
+    const boundedTime = Math.max(0, Math.min(targetSeconds, activeAudio.duration || targetSeconds));
+    activeAudio.currentTime = boundedTime;
+    setCurrentTime(boundedTime);
+    if (activeAudio.duration) {
+      setProgress((boundedTime / activeAudio.duration) * 100);
+    }
+  }, []);
+
   // デッキイベントの登録と監視
   useEffect(() => {
     const setupDeckListeners = (audio: HTMLAudioElement | null, deckName: "A" | "B") => {
@@ -708,6 +722,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         currentTime,
         duration,
         playSong,
+        seekTo,
         togglePlay,
         toggleRandom,
         playNextSong,

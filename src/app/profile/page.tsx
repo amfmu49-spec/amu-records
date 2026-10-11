@@ -254,6 +254,7 @@ export default function ProfilePage() {
   const [editDescription, setEditDescription] = useState("");
   const [editCoArtist1, setEditCoArtist1] = useState("");
   const [editCoArtist2, setEditCoArtist2] = useState("");
+  const [editSyncedLyrics, setEditSyncedLyrics] = useState("");
 
   const handleDeleteSong = async (songId: string) => {
     if (!user) return;
@@ -434,6 +435,7 @@ export default function ProfilePage() {
     setEditDescription(song.description || "");
     setEditCoArtist1(song.co_artist_id_1 || "");
     setEditCoArtist2(song.co_artist_id_2 || "");
+    setEditSyncedLyrics(song.synced_lyrics || "");
   };
 
   const handleUpdateSong = async (songId: string) => {
@@ -443,17 +445,34 @@ export default function ProfilePage() {
       return;
     }
 
+    const updatePayload: any = {
+      title: editTitle.trim(),
+      description: editDescription.trim(),
+      co_artist_id_1: editCoArtist1 || null,
+      co_artist_id_2: editCoArtist2 || null,
+      synced_lyrics: editSyncedLyrics.trim() || null,
+    };
+
     // 本人の曲のみ更新 (user_id = user.id)
-    const { error } = await supabase
+    let { error } = await supabase
       .from("songs")
-      .update({
-        title: editTitle.trim(),
-        description: editDescription.trim(),
-        co_artist_id_1: editCoArtist1 || null,
-        co_artist_id_2: editCoArtist2 || null,
-      })
+      .update(updatePayload)
       .eq("id", songId)
       .eq("user_id", user.id);
+
+    // カラム未追加時のフォールバック
+    if (error && (error.message?.includes("synced_lyrics") || error.details?.includes("synced_lyrics") || error.code === "PGRST204")) {
+      delete updatePayload.synced_lyrics;
+      const retry = await supabase
+        .from("songs")
+        .update(updatePayload)
+        .eq("id", songId)
+        .eq("user_id", user.id);
+      error = retry.error;
+      if (!error) {
+        alert("※タイトル等は更新されましたが、タイムスタンプ歌詞カラムがSupabaseに未反映のため歌詞は除外されました。SupabaseでマイグレーションSQLを実行してください。");
+      }
+    }
 
     if (error) {
       alert("更新に失敗しました: " + error.message);
@@ -464,8 +483,10 @@ export default function ProfilePage() {
         description: editDescription.trim(),
         co_artist_id_1: editCoArtist1 || null,
         co_artist_id_2: editCoArtist2 || null,
+        synced_lyrics: editSyncedLyrics.trim() || null,
       } : s));
       setEditingSongId(null);
+      alert("楽曲情報を更新しました！");
     }
   };
 
@@ -753,6 +774,40 @@ export default function ProfilePage() {
                       <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">概要・キャプション</label>
                         <textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 h-20 resize-none" />
+                      </div>
+
+                      {/* タイムスタンプ付き歌詞編集 */}
+                      <div className="p-3 bg-white rounded-lg border border-indigo-100 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <span>🎙️ タイムスタンプ歌詞 (リリモ同期用)</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditSyncedLyrics(
+`[00:00.00] (イントロ)
+[00:12.50] 静かな夜の街を歩く
+[00:18.20] ネオンが滲む雨上がり
+[00:24.00] 君の声がどこかで聴こえた気がした
+[00:32.10] 振り返る交差点の真ん中で
+[00:38.00] あのメロディが胸に響いている`
+                              );
+                            }}
+                            className="text-[11px] text-indigo-600 hover:underline font-bold cursor-pointer"
+                          >
+                            例を入力
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-slate-400">
+                          [00:15] 歌詞 の形式で登録すると曲詳細画面でリリモ風に自動同期されます
+                        </p>
+                        <textarea
+                          value={editSyncedLyrics}
+                          onChange={e => setEditSyncedLyrics(e.target.value)}
+                          placeholder="[00:12.50] 歌詞テキスト"
+                          className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 h-28 leading-relaxed"
+                        />
                       </div>
                       
                       {/* コラボクリエイター編集 */}

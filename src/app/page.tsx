@@ -8,6 +8,7 @@ import CommunityStatsBar from "@/components/CommunityStatsBar";
 import SongSearchSection from "@/components/SongSearchSection";
 import CommunityBoard from "@/components/CommunityBoard";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
+import FeaturedPlaylistsSection from "@/components/FeaturedPlaylistsSection";
 import { connection } from "next/server";
 
 export default async function Home() {
@@ -139,76 +140,7 @@ export default async function Home() {
                 )}
               </div>
 
-              {publicPlaylists && publicPlaylists.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                  {publicPlaylists.map((pl: any) => {
-                    const covers = (pl.playlist_songs || [])
-                      .map((ps: any) => ps.songs?.cover_url)
-                      .filter(Boolean);
-
-                    return (
-                      <Link
-                        key={pl.id}
-                        href={`/playlist/${pl.id}`}
-                        className="group bg-white border border-slate-200/90 rounded-2xl p-4 transition-all duration-300 hover:shadow-lg hover:border-slate-300 flex flex-col justify-between"
-                      >
-                        <div className="flex items-center gap-3.5 mb-3">
-                          <div className="w-16 h-16 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-100 flex items-center justify-center relative shadow-xs">
-                            {covers.length >= 4 ? (
-                              <div className="grid grid-cols-2 grid-rows-2 w-full h-full">
-                                {covers.slice(0, 4).map((url: string, i: number) => (
-                                  <img key={i} src={url} alt="cover" className="w-full h-full object-cover" />
-                                ))}
-                              </div>
-                            ) : covers.length > 0 ? (
-                              <img src={covers[0]} alt="cover" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                            ) : (
-                              <span className="text-slate-400 text-xl">🎵</span>
-                            )}
-                          </div>
-
-                          <div className="min-w-0 flex-1">
-                            <h3 className="font-extrabold text-sm sm:text-base text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
-                              {pl.title}
-                            </h3>
-                            {pl.profiles && (
-                              <p className="text-xs text-slate-500 font-semibold truncate mt-0.5">
-                                by {pl.profiles.artist_name}
-                              </p>
-                            )}
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-purple-50 text-purple-600 border border-purple-100">
-                                {pl.playlist_songs?.length || 0}曲
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {pl.description && (
-                          <p className="text-xs text-slate-500 line-clamp-2 mt-1 mb-2">
-                            {pl.description}
-                          </p>
-                        )}
-
-                        <div className="flex items-center justify-end pt-2 border-t border-slate-100 text-xs font-bold text-indigo-600 group-hover:translate-x-0.5 transition-transform">
-                          <span>プレイリストを聴く →</span>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="p-8 bg-white border border-slate-200 border-dashed rounded-3xl text-center">
-                  <p className="text-slate-600 font-bold text-sm mb-1">まだ公開プレイリストがありません</p>
-                  <p className="text-slate-400 text-xs mb-3">各曲の「追加」ボタンやマイページから、お気に入りの曲を集めたプレイリストを作成できます！</p>
-                  <Link
-                    href="/profile"
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors"
-                  >
-                    プレイリストを作成する
-                  </Link>
-                </div>
-              )}
+              <FeaturedPlaylistsSection playlists={publicPlaylists || []} />
             </div>
           </div>
         </SongSearchSection>
