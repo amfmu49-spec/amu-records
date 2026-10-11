@@ -1,8 +1,10 @@
 /**
- * AMU RECORDS - Audio Cache Engine (Web Cache API)
+ * AMU RECORDS - Audio Cache Engine (Web Cache API) & Bunny.net CDN Accelerator
  * 楽曲MP3データをブラウザ内に安全にキャッシュし、
- * 同じ曲の2回目以降の再生時にSupabaseへの通信（Cached Data / Egress）を完全に「0バイト」にするエンジン
+ * Bunny.net CDNと連携してSupabaseへの通信（Cached Data / Egress）を完全に削減するエンジン
  */
+
+import { toCdnUrl } from "@/utils/cdn";
 
 const CACHE_NAME = "amu-records-audio-v1";
 const MAX_CACHED_TRACKS = 30; // 最大30曲（約200MB）をLRUで安全に保持
@@ -37,10 +39,13 @@ async function cleanOldCaches(cache: Cache) {
 
 /**
  * 音声URLからキャッシュ済みBlob URLを取得、
- * まだキャッシュにない場合は元のURLを返しつつバックグラウンドでキャッシュ保存
+ * まだキャッシュにない場合はBunny.net CDN経由のURLを返しつつ裏でダウンロードしてキャッシュ
  */
-export async function getCachedAudioUrl(audioUrl: string): Promise<string> {
-  if (!audioUrl || !isCacheSupported()) {
+export async function getCachedAudioUrl(rawUrl: string): Promise<string> {
+  if (!rawUrl) return "";
+  const audioUrl = toCdnUrl(rawUrl);
+
+  if (!isCacheSupported()) {
     return audioUrl;
   }
 
@@ -58,15 +63,15 @@ export async function getCachedAudioUrl(audioUrl: string): Promise<string> {
       const blob = await cachedResponse.blob();
       const blobUrl = URL.createObjectURL(blob);
       blobUrlMap.set(audioUrl, blobUrl);
-      console.log("⚡ [AudioCache] Cache hit! Supabase egress: 0 bytes ->", audioUrl);
+      console.log("⚡ [AudioCache] Local hit! Supabase egress: 0 bytes ->", audioUrl);
       return blobUrl;
     }
 
-    // 3. キャッシュにない場合：再生を待たせないために元のURLを返しつつ、裏でダウンロードしてキャッシュ
+    // 3. キャッシュにない場合：再生を待たせないためにCDN経由のURLを返しつつ、裏でダウンロードしてキャッシュ
     backgroundCacheAudio(audioUrl, cache);
     return audioUrl;
   } catch (err) {
-    console.warn("Audio cache lookup failed, fallback to direct url:", err);
+    console.warn("Audio cache lookup failed, fallback to CDN url:", err);
     return audioUrl;
   }
 }
@@ -76,7 +81,6 @@ export async function getCachedAudioUrl(audioUrl: string): Promise<string> {
  */
 async function backgroundCacheAudio(audioUrl: string, cache: Cache) {
   try {
-    // 優先度低めでバックグラウンド取得
     const response = await fetch(audioUrl, {
       mode: "cors",
       credentials: "omit",
@@ -87,10 +91,10 @@ async function backgroundCacheAudio(audioUrl: string, cache: Cache) {
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
       blobUrlMap.set(audioUrl, blobUrl);
-      console.log("💾 [AudioCache] Saved to cache for zero-egress future plays:", audioUrl);
+      console.log("💾 [AudioCache] Saved to cache via CDN:", audioUrl);
       await cleanOldCaches(cache);
     }
-  } catch (err) {
+  } catch {
     // オフラインや中断時は無視
   }
 }
@@ -98,8 +102,11 @@ async function backgroundCacheAudio(audioUrl: string, cache: Cache) {
 /**
  * 次の曲（ランダム候補など）を事前キャッシュ
  */
-export async function preloadAudioToCache(audioUrl: string) {
-  if (!audioUrl || !isCacheSupported() || blobUrlMap.has(audioUrl)) {
+export async function preloadAudioToCache(rawUrl: string) {
+  if (!rawUrl) return;
+  const audioUrl = toCdnUrl(rawUrl);
+
+  if (!isCacheSupported() || blobUrlMap.has(audioUrl)) {
     return;
   }
 

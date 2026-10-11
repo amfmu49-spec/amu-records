@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useAudioPlayer } from "@/components/AudioPlayerProvider";
 import { createClient } from "@/utils/supabase/client";
 import { preloadAudioToCache } from "@/utils/audioCache";
+import { toCdnUrl } from "@/utils/cdn";
 import Link from "next/link";
 import UserRoleBadge from "@/components/UserRoleBadge";
 import AddToPlaylistModal from "@/components/AddToPlaylistModal";
@@ -122,7 +123,7 @@ export default function SongDetailHero({
           <div className="w-56 h-56 sm:w-72 sm:h-72 rounded-2xl sm:rounded-3xl bg-slate-800 shadow-2xl overflow-hidden border-2 border-white/10 relative">
             {song.cover_url ? (
               <img
-                src={song.cover_url}
+                src={toCdnUrl(song.cover_url)}
                 alt={song.title}
                 className={`w-full h-full object-cover transition-transform duration-700 ${
                   isThisPlaying ? "scale-105" : "group-hover:scale-105"

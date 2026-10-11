@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { getCachedAudioUrl, preloadAudioToCache } from "@/utils/audioCache";
+import { toCdnUrl } from "@/utils/cdn";
 
 export type Song = {
   id: string;
@@ -65,8 +66,8 @@ const normalizeSong = (item: any): Song => {
     return {
       id: item.id,
       title: item.title,
-      file_url: item.file_url,
-      cover_url: item.cover_url,
+      file_url: toCdnUrl(item.file_url),
+      cover_url: item.cover_url ? toCdnUrl(item.cover_url) : null,
       artist: item.artist,
     };
   }
@@ -82,8 +83,8 @@ const normalizeSong = (item: any): Song => {
   return {
     id: item.id,
     title: item.title,
-    file_url: item.file_url,
-    cover_url: item.cover_url || null,
+    file_url: toCdnUrl(item.file_url),
+    cover_url: item.cover_url ? toCdnUrl(item.cover_url) : null,
     artist: artistName,
   };
 };
