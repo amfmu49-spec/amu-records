@@ -64,7 +64,7 @@ export default async function Home() {
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200 px-2 sm:px-6 py-2 sm:py-3 md:py-3.5 flex justify-between items-center shadow-sm">
         <div className="flex items-center shrink">
           <Link href="/" className="relative z-20 block shrink -ml-1 sm:ml-0">
-            <img src="/logo.png" alt="AMU RECORDS" className="h-12 sm:h-24 md:h-32 w-auto max-w-[160px] sm:max-w-none object-contain cursor-pointer hover:opacity-80 transition-opacity" />
+            <img src="/logo.png" alt="AMU RECORDS" className="h-10 sm:h-24 md:h-32 w-auto max-w-[130px] sm:max-w-none object-contain cursor-pointer hover:opacity-80 transition-opacity" />
           </Link>
         </div>
         <div className="shrink-0 relative z-20">

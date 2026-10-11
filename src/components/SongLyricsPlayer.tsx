@@ -92,15 +92,22 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
 
       // ★ ユーザー指示：「勝手にお任せで流して」
       if (J.omakase) {
-        J.omakase(project);
+        const r = J.omakase(project);
+        if (r) {
+          Object.assign(project, r);
+        }
       }
+
+      // ★ アスペクト比狂い防止：必ず 16:9 横長ワイド、解像度 1080、60fps を厳格に固定
+      project.aspect = "16:9";
+      project.res = 1080;
+      project.fps = 60;
 
       // ★ 超重要：Lyrimoのデフォルト12fpsコマ落ち制限を解除し、60fpsフル滑らか描画を強制！
       if (project.fx) {
         project.fx.koma = 0; // 0 = 毎フレーム描画（コマ落ちなし）
         project.fx.onTwos = false; // 2コマ打ち解除
       }
-      project.fps = 60;
 
       const plan = J.plan(project);
       planRef.current = plan;
@@ -117,24 +124,50 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
     }
   }, [isEngineLoaded, song.id, song.title, song.artist, syncedLyrics]);
 
-  // 3. コンテナのリサイズ監視でCanvasサイズを事前固定（毎フレームのレイアウト再計算を完全防止）
+  // 3. コンテナのリサイズ監視でアスペクト比を100%固定したCanvasサイズを算出（狂いや歪みを完全防止）
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !isPlanReady) return;
+    if (!container || !isPlanReady || viewMode !== "lyrimo") return;
 
     const updateCanvasSize = () => {
       const canvas = canvasRef.current;
       const plan = planRef.current;
-      if (!canvas || !plan) return;
+      if (!canvas || !plan || !container) return;
 
       const rect = container.getBoundingClientRect();
-      const cssW = Math.max(320, rect.width || 640);
-      const dpr = Math.min(1.5, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
-      const targetW = Math.round(cssW * dpr);
-      const targetH = Math.round((targetW * plan.H) / plan.W);
-      const scale = targetW / plan.W;
+      const containerW = Math.max(10, rect.width || 640);
+      const containerH = Math.max(10, rect.height || (containerW * 9) / 16);
 
+      // plan の厳密なアスペクト比（通常 1920 / 1080 = 16:9）
+      const planAspect = (plan.W && plan.H) ? plan.W / plan.H : 16 / 9;
+      const containerAspect = containerW / containerH;
+
+      // コンテナ内に比率を保ったまま収めるCSS表示サイズ（Letterbox / Contain）
+      let cssW: number;
+      let cssH: number;
+
+      if (containerAspect > planAspect) {
+        // コンテナの方が横長（左右に黒帯）
+        cssH = containerH;
+        cssW = Math.round(containerH * planAspect);
+      } else {
+        // コンテナの方が縦長（上下に黒帯）
+        cssW = containerW;
+        cssH = Math.round(containerW / planAspect);
+      }
+
+      // Canvas のスタイルに直接ピクセルサイズを指定して、CSSの縦横引き伸ばしを防止
+      canvas.style.width = `${cssW}px`;
+      canvas.style.height = `${cssH}px`;
+
+      // Retina / 高精細ディスプレイ対応
+      const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
+      const targetW = Math.round(cssW * dpr);
+      const targetH = Math.round(cssH * dpr);
+
+      const scale = targetW / (plan.W || 1920);
       scaleRef.current = scale;
+
       if (canvas.width !== targetW || canvas.height !== targetH) {
         canvas.width = targetW;
         canvas.height = targetH;
@@ -145,10 +178,18 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
       updateCanvasSize();
     });
     ro.observe(container);
-    updateCanvasSize();
 
-    return () => ro.disconnect();
-  }, [isPlanReady, isFullscreen]);
+    window.addEventListener("resize", updateCanvasSize);
+    // 初期化時と少し遅延（レイアウト確定後）の2回実行
+    updateCanvasSize();
+    const timer = setTimeout(updateCanvasSize, 100);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", updateCanvasSize);
+      clearTimeout(timer);
+    };
+  }, [isPlanReady, isFullscreen, viewMode]);
 
   // 4. 超高精度 60fps/120fps requestAnimationFrame ループ
   useEffect(() => {
@@ -345,7 +386,7 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
           {/* Lyrimo 本物のキャンバス描画ステージ */}
           <canvas
             ref={canvasRef}
-            className="w-full h-full object-contain cursor-pointer block"
+            className="max-w-full max-h-full cursor-pointer block drop-shadow-md"
           />
 
           {/* 未再生時 / 一時停止時のスマートなオーバーレイ案内 */}

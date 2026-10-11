@@ -33,6 +33,9 @@ export default function AuthButton({ user }: { user: User | null }) {
   };
 
   const handleLogout = async () => {
+    if (!window.confirm("ログアウトしてもよろしいですか？")) {
+      return;
+    }
     try {
       setLoading(true);
       await supabase.auth.signOut();
@@ -44,24 +47,22 @@ export default function AuthButton({ user }: { user: User | null }) {
 
   if (user) {
     return (
-      <div className="flex items-center gap-2 sm:gap-2.5">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
         <NotificationBell />
-        <div className="flex flex-col gap-1 items-stretch shrink-0">
-          <Link 
-            href="/profile" 
-            className="text-[11px] sm:text-xs font-bold text-center text-slate-900 bg-slate-100 hover:bg-slate-200 active:scale-95 px-3 py-1 rounded-md transition-all shrink-0 shadow-2xs whitespace-nowrap"
-          >
-            マイページ
-          </Link>
-          <button 
-            type="button"
-            onClick={handleLogout} 
-            disabled={loading}
-            className="bg-white hover:bg-slate-50 active:scale-95 text-slate-500 hover:text-slate-800 px-3 py-0.5 rounded-md transition-all text-[10px] sm:text-[11px] font-medium border border-slate-200 shadow-2xs shrink-0 disabled:opacity-50 cursor-pointer whitespace-nowrap"
-          >
-            ログアウト
-          </button>
-        </div>
+        <Link 
+          href="/profile" 
+          className="text-xs sm:text-sm font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 active:scale-95 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-full transition-all shrink-0 whitespace-nowrap shadow-2xs"
+        >
+          マイページ
+        </Link>
+        <button 
+          type="button"
+          onClick={handleLogout} 
+          disabled={loading}
+          className="bg-white hover:bg-red-50 hover:text-red-600 hover:border-red-200 active:scale-95 text-slate-500 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full transition-all text-xs sm:text-sm font-medium border border-slate-200 shadow-2xs shrink-0 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+        >
+          ログアウト
+        </button>
       </div>
     );
   }

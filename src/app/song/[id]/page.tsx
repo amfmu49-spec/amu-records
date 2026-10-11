@@ -125,7 +125,7 @@ export default async function SongPage({ params }: SongPageProps) {
             <img
               src="/logo.png"
               alt="AMU RECORDS"
-              className="h-12 sm:h-24 md:h-32 w-auto max-w-[160px] sm:max-w-none object-contain cursor-pointer hover:opacity-80 transition-opacity"
+              className="h-10 sm:h-24 md:h-32 w-auto max-w-[130px] sm:max-w-none object-contain cursor-pointer hover:opacity-80 transition-opacity"
             />
           </Link>
         </div>
