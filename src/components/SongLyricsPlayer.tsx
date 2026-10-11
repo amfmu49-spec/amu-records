@@ -15,9 +15,20 @@ interface SongLyricsPlayerProps {
   };
 }
 
+// Lyrimoのモーションスタイル定義
+type LyrimoStyle = "kinetic" | "glitch" | "neon" | "bounce";
+
+const LYRIMO_STYLES: { id: LyrimoStyle; label: string; icon: string }[] = [
+  { id: "kinetic", label: "キネティック", icon: "💥" },
+  { id: "glitch", label: "グリッチ", icon: "⚡" },
+  { id: "neon", label: "ネオングロー", icon: "✨" },
+  { id: "bounce", label: "バウンス", icon: "🎾" },
+];
+
 export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlayerProps) {
   const { currentSong, isPlaying, currentTime, duration, playSong, seekTo } = useAudioPlayer();
-  const [viewMode, setViewMode] = useState<"ririmo" | "highlight">("ririmo");
+  const [viewMode, setViewMode] = useState<"lyrimo" | "highlight">("lyrimo");
+  const [lyrimoStyle, setLyrimoStyle] = useState<LyrimoStyle>("kinetic");
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // パースしたタイムスタンプ付き歌詞
@@ -34,21 +45,31 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
     return findActiveLyricIndex(lyricLines, currentTime);
   }, [isThisSongActive, lyricLines, currentTime]);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const activeLineRef = useRef<HTMLDivElement>(null);
+  const activeLine = activeIndex >= 0 ? lyricLines[activeIndex] : null;
 
-  // アクティブ行への自動スムーズスクロール
+  // 現在行の進行割合 (0.0 〜 1.0)
+  const lineProgress = useMemo(() => {
+    if (!activeLine || !isThisSongActive) return 0;
+    const nextLine = lyricLines[activeIndex + 1];
+    const duration = nextLine ? Math.max(0.8, nextLine.time - activeLine.time) : 4.0;
+    const elapsed = Math.max(0, currentTime - activeLine.time);
+    return Math.min(1, elapsed / duration);
+  }, [activeLine, activeIndex, currentTime, isThisSongActive, lyricLines]);
+
+  const activeListRef = useRef<HTMLDivElement>(null);
+
+  // ハイライトモード時の自動スクロール
   useEffect(() => {
-    if (activeLineRef.current && isThisSongActive) {
-      activeLineRef.current.scrollIntoView({
+    if (viewMode === "highlight" && activeListRef.current) {
+      activeListRef.current.scrollIntoView({
         behavior: "smooth",
         block: "center",
       });
     }
-  }, [activeIndex, isThisSongActive, viewMode]);
+  }, [activeIndex, viewMode]);
 
   // 行クリックでその位置にシーク
-  const handleLineClick = (time: number) => {
+  const handleSeek = (time: number) => {
     if (!isThisSongActive) {
       playSong({
         id: song.id,
@@ -81,55 +102,71 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
     return (
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs text-center">
         <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center text-xl mx-auto mb-3">
-          🎙️
+          🎬
         </div>
         <h3 className="text-base font-extrabold text-slate-900 mb-1">
           タイムスタンプ歌詞は未登録です
         </h3>
         <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-          投稿者（クリエイター）は、マイページの「曲の編集」から [00:15] 形式のタイムスタンプ付き歌詞を登録すると、ここで美しいリリモ同期歌詞を楽しめます！
+          マイページの「曲の編集」から [00:15] 形式でタイムスタンプ付き歌詞を登録すると、ここで文字PVアプリ『Lyrimo（リリモ）』のリリックモーションを楽しめます！
         </p>
       </div>
     );
   }
 
   return (
-    <div className={`transition-all duration-300 ${isFullscreen ? "fixed inset-0 z-[100] bg-slate-950 p-4 sm:p-8 flex flex-col" : "bg-white rounded-3xl p-5 sm:p-7 border border-slate-200 shadow-xs"}`}>
-      {/* プレイヤーコントロールバー & モード切り替えタブ */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-slate-100/80">
+    <div className={`transition-all duration-300 ${isFullscreen ? "fixed inset-0 z-[100] bg-slate-950 p-4 sm:p-8 flex flex-col justify-between" : "bg-white rounded-3xl p-5 sm:p-7 border border-slate-200 shadow-xs"}`}>
+      {/* ヘッダー操作パネル */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-black">
-            <span>🎵</span>
-            <span>LYRICS SYNC</span>
-          </div>
-
           {/* モード切り替えタブ */}
           <div className="flex items-center p-1 bg-slate-100 rounded-xl">
             <button
               type="button"
-              onClick={() => setViewMode("ririmo")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                viewMode === "ririmo"
-                  ? "bg-white text-indigo-600 shadow-xs scale-102"
+              onClick={() => setViewMode("lyrimo")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === "lyrimo"
+                  ? "bg-slate-900 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <span>✨</span>
-              <span>リリモモード</span>
+              <span>🎬</span>
+              <span>Lyrimo モード (文字PV)</span>
             </button>
             <button
               type="button"
               onClick={() => setViewMode("highlight")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
                 viewMode === "highlight"
-                  ? "bg-white text-indigo-600 shadow-xs scale-102"
+                  ? "bg-indigo-600 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
               <span>📜</span>
-              <span>ハイライト一覧</span>
+              <span>ハイライト一覧モード</span>
             </button>
           </div>
+
+          {/* Lyrimoモード専用: モーションスタイル切り替え */}
+          {viewMode === "lyrimo" && (
+            <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+              {LYRIMO_STYLES.map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setLyrimoStyle(st.id)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0 border ${
+                    lyrimoStyle === st.id
+                      ? "bg-indigo-50 border-indigo-300 text-indigo-700 shadow-2xs scale-102"
+                      : "bg-white border-slate-200 text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <span className="mr-1">{st.icon}</span>
+                  <span>{st.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 self-end sm:self-auto">
@@ -160,75 +197,127 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
         </div>
       </div>
 
-      {/* ＝＝＝ モード 1: リリモ（Ririmo）風リリックモード ＝＝＝ */}
-      {viewMode === "ririmo" && (
+      {/* ＝＝＝ モード 1: 🔥 Lyrimo（リリモ）文字PVモーションステージ ＝＝＝ */}
+      {viewMode === "lyrimo" && (
         <div
-          ref={containerRef}
-          className={`relative overflow-y-auto rounded-2xl scroll-smooth transition-all ${
+          className={`relative overflow-hidden rounded-2xl flex flex-col items-center justify-center select-none ${
             isFullscreen
-              ? "flex-1 bg-gradient-to-b from-slate-950 via-indigo-950/40 to-slate-950 p-6 sm:p-12"
-              : "h-96 sm:h-[28rem] bg-gradient-to-b from-slate-900 via-indigo-950/80 to-slate-950 p-6 sm:p-10 shadow-inner"
+              ? "flex-1 w-full bg-slate-950"
+              : "w-full h-80 sm:h-96 md:h-[26rem] bg-slate-950 shadow-2xl border border-slate-800"
           }`}
-          style={{
-            maskImage: "linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)",
-            WebkitMaskImage: "linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)",
-          }}
         >
-          {/* カバーアート背景ブラー演出 */}
+          {/* 背景：カバーアートぼかし＋アンビエントネオン */}
           {song.cover_url && (
             <div
-              className="absolute inset-0 bg-cover bg-center opacity-10 pointer-events-none blur-3xl scale-125"
+              className="absolute inset-0 bg-cover bg-center opacity-25 filter blur-3xl scale-125 pointer-events-none transition-all duration-700"
               style={{ backgroundImage: `url(${song.cover_url})` }}
             />
           )}
 
-          <div className="relative z-10 max-w-2xl mx-auto py-32 space-y-8 sm:space-y-10 text-center">
-            {lyricLines.map((line, idx) => {
-              const isActive = idx === activeIndex;
-              const isPast = idx < activeIndex;
+          {/* グリッド/スキャンライン装飾 */}
+          <div
+            className="absolute inset-0 opacity-15 pointer-events-none"
+            style={{
+              backgroundImage: "linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)",
+              backgroundSize: "32px 32px",
+            }}
+          />
 
-              return (
-                <div
-                  key={line.id}
-                  ref={isActive ? activeLineRef : null}
-                  onClick={() => handleLineClick(line.time)}
-                  className={`group transition-all duration-500 cursor-pointer select-none rounded-2xl px-4 py-3 ${
-                    isActive
-                      ? "scale-110 sm:scale-115 text-white font-black drop-shadow-[0_0_25px_rgba(129,140,248,0.8)]"
-                      : isPast
-                      ? "text-slate-400/50 hover:text-slate-200 scale-95 font-bold"
-                      : "text-slate-400/70 hover:text-slate-200 scale-95 font-bold"
+          {/* Lyrimo ウォーターマークバッジ */}
+          <div className="absolute top-4 left-4 z-20 flex items-center gap-2 pointer-events-none">
+            <span className="text-[10px] font-mono tracking-widest text-indigo-400 bg-indigo-950/80 px-2.5 py-0.5 rounded-full border border-indigo-800/60 uppercase">
+              LYRIMO MOTION STAGE
+            </span>
+          </div>
+
+          {/* 前後のフレーズ予告（上下に薄く表示） */}
+          <div className="absolute top-8 sm:top-10 inset-x-0 text-center z-10 pointer-events-none px-6">
+            <p className="text-xs sm:text-sm text-slate-500/50 font-bold truncate transition-all duration-500">
+              {activeIndex > 0 ? lyricLines[activeIndex - 1]?.text : ""}
+            </p>
+          </div>
+
+          {/* メイン文字モーション表示エリア */}
+          <div className="relative z-20 max-w-4xl px-6 text-center w-full">
+            {activeLine ? (
+              <div
+                key={activeLine.id}
+                className="transition-all duration-200"
+                style={{
+                  transform:
+                    lyrimoStyle === "kinetic"
+                      ? `scale(${1 + Math.sin(lineProgress * Math.PI) * 0.12}) translateY(${Math.sin(lineProgress * Math.PI) * -8}px)`
+                      : lyrimoStyle === "bounce"
+                      ? `scale(${0.9 + (1 - Math.pow(1 - Math.min(1, lineProgress * 3), 3)) * 0.2})`
+                      : lyrimoStyle === "glitch"
+                      ? `skewX(${(Math.random() - 0.5) * (lineProgress < 0.2 ? 14 : 2)}deg)`
+                      : "none",
+                }}
+              >
+                {/* グリッチ用のRGBズレレイヤー */}
+                {lyrimoStyle === "glitch" && (
+                  <div className="relative inline-block">
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-0 text-cyan-400 opacity-70 filter blur-[1px] select-none translate-x-1"
+                    >
+                      {activeLine.text}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-0 text-rose-500 opacity-70 filter blur-[1px] select-none -translate-x-1"
+                    >
+                      {activeLine.text}
+                    </span>
+                  </div>
+                )}
+
+                {/* メインの巨大テキスト */}
+                <h2
+                  className={`font-black tracking-wider leading-tight select-none transition-all ${
+                    lyrimoStyle === "neon"
+                      ? "text-3xl sm:text-5xl md:text-6xl text-white drop-shadow-[0_0_20px_rgba(99,102,241,1)] drop-shadow-[0_0_45px_rgba(236,72,153,0.8)]"
+                      : lyrimoStyle === "kinetic"
+                      ? "text-3xl sm:text-5xl md:text-6xl text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-rose-300 to-indigo-200 drop-shadow-[0_10px_30px_rgba(0,0,0,0.8)]"
+                      : lyrimoStyle === "bounce"
+                      ? "text-3xl sm:text-5xl md:text-6xl text-amber-300 drop-shadow-[0_4px_25px_rgba(251,191,36,0.6)]"
+                      : "text-3xl sm:text-5xl md:text-6xl text-white drop-shadow-2xl"
                   }`}
                 >
-                  <p
-                    className={`leading-relaxed tracking-wide transition-all ${
-                      isActive
-                        ? "text-2xl sm:text-3xl md:text-4xl text-transparent bg-clip-text bg-gradient-to-r from-white via-indigo-200 to-pink-200"
-                        : "text-base sm:text-xl text-slate-400 group-hover:text-slate-200"
-                    }`}
-                  >
-                    {line.text}
-                  </p>
+                  {activeLine.text}
+                </h2>
 
-                  {/* タップでジャンプ案内（ホバー時） */}
-                  <span className="text-[10px] text-indigo-400 font-semibold opacity-0 group-hover:opacity-100 transition-opacity mt-1 block">
-                    ▶ タップしてこの位置から再生
-                  </span>
+                {/* フレーズの進行バー */}
+                <div className="w-32 sm:w-48 h-1 bg-white/10 rounded-full mx-auto mt-6 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 transition-all duration-75"
+                    style={{ width: `${lineProgress * 100}%` }}
+                  />
                 </div>
-              );
-            })}
+              </div>
+            ) : (
+              <div className="text-slate-500 text-sm sm:text-base font-bold animate-pulse">
+                {isThisSongActive ? "(イントロ / 間奏再生中...)" : "再生ボタンを押してLyrimo文字PVを開始"}
+              </div>
+            )}
+          </div>
+
+          {/* 次のフレーズ予告（下部に薄く表示） */}
+          <div className="absolute bottom-8 sm:bottom-10 inset-x-0 text-center z-10 pointer-events-none px-6">
+            <p className="text-xs sm:text-sm text-slate-400/40 font-bold truncate transition-all duration-500">
+              {activeIndex + 1 < lyricLines.length ? `NEXT: ${lyricLines[activeIndex + 1]?.text}` : ""}
+            </p>
           </div>
         </div>
       )}
 
-      {/* ＝＝＝ モード 2: ハイライト一覧モード ＝＝＝ */}
+      {/* ＝＝＝ モード 2: 📜 ハイライト一覧モード ＝＝＝ */}
       {viewMode === "highlight" && (
         <div
-          ref={containerRef}
-          className={`overflow-y-auto rounded-2xl p-4 sm:p-6 transition-all ${
+          className={`overflow-y-auto rounded-2xl p-3 sm:p-5 transition-all ${
             isFullscreen
               ? "flex-1 bg-slate-900 text-slate-100"
-              : "h-96 sm:h-[28rem] bg-slate-50 border border-slate-200/90"
+              : "h-80 sm:h-96 md:h-[26rem] bg-slate-50 border border-slate-200/90"
           }`}
         >
           <div className="max-w-2xl mx-auto divide-y divide-slate-200/60 dark:divide-slate-800 space-y-1">
@@ -238,9 +327,9 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
               return (
                 <div
                   key={line.id}
-                  ref={isActive ? activeLineRef : null}
-                  onClick={() => handleLineClick(line.time)}
-                  className={`group p-3 sm:p-4 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-4 ${
+                  ref={isActive ? activeListRef : null}
+                  onClick={() => handleSeek(line.time)}
+                  className={`group p-3 sm:p-3.5 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-3 ${
                     isActive
                       ? "bg-indigo-600 text-white font-black shadow-md shadow-indigo-600/20 translate-x-1"
                       : isFullscreen
@@ -260,7 +349,7 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
                     </span>
                     <span
                       className={`text-sm sm:text-base leading-relaxed truncate ${
-                        isActive ? "font-black" : "font-semibold"
+                        isActive ? "font-black scale-102" : "font-semibold"
                       }`}
                     >
                       {line.text}
@@ -268,8 +357,8 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
                   </div>
 
                   <span
-                    className={`text-xs shrink-0 transition-transform group-hover:scale-110 ${
-                      isActive ? "text-amber-300" : "text-slate-400 opacity-0 group-hover:opacity-100"
+                    className={`text-xs shrink-0 transition-transform ${
+                      isActive ? "text-amber-300 font-bold" : "text-slate-400 opacity-0 group-hover:opacity-100"
                     }`}
                   >
                     ▶
@@ -281,10 +370,10 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
         </div>
       )}
 
-      {/* フッター補足説明 */}
+      {/* フッター情報 */}
       <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 px-1">
-        <span>💡 歌詞の各行をタップするとその位置にジャンプします</span>
-        <span>全 {lyricLines.length} 行</span>
+        <span>💡 タイムスタンプに合わせてLyrimoリリックモーションが自動同期します</span>
+        <span>全 {lyricLines.length} フレーズ</span>
       </div>
     </div>
   );
