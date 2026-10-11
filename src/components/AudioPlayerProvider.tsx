@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { getCachedAudioUrl, preloadAudioToCache } from "@/utils/audioCache";
 import { toCdnUrl } from "@/utils/cdn";
@@ -11,6 +12,7 @@ export type Song = {
   file_url: string;
   cover_url: string | null;
   artist?: string;
+  synced_lyrics?: string | null;
 };
 
 type AudioPlayerContextType = {
@@ -61,7 +63,7 @@ const formatTime = (seconds: number) => {
 
 // 任意の曲オブジェクトを正規化
 const normalizeSong = (item: any): Song => {
-  if (!item) return { id: "", title: "", file_url: "", cover_url: null, artist: "" };
+  if (!item) return { id: "", title: "", file_url: "", cover_url: null, artist: "", synced_lyrics: null };
   if (item.artist && item.file_url && typeof item.artist === "string") {
     return {
       id: item.id,
@@ -69,6 +71,7 @@ const normalizeSong = (item: any): Song => {
       file_url: toCdnUrl(item.file_url),
       cover_url: item.cover_url ? toCdnUrl(item.cover_url) : null,
       artist: item.artist,
+      synced_lyrics: item.synced_lyrics || null,
     };
   }
 
@@ -86,6 +89,7 @@ const normalizeSong = (item: any): Song => {
     file_url: toCdnUrl(item.file_url),
     cover_url: item.cover_url ? toCdnUrl(item.cover_url) : null,
     artist: artistName,
+    synced_lyrics: item.synced_lyrics || null,
   };
 };
 
@@ -127,6 +131,53 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
   useEffect(() => {
     playlistRef.current = playlist;
   }, [playlist]);
+
+  // プレイヤー専用：ログインユーザー情報、現在の曲のいいね・コメント状態
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentLikes, setCurrentLikes] = useState<{ isLiked: boolean; count: number }>({ isLiked: false, count: 0 });
+  const [currentCommentsCount, setCurrentCommentsCount] = useState<number>(0);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      setCurrentUser(data.user);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!currentSong?.id) return;
+    const supabase = createClient();
+    Promise.all([
+      supabase.from("likes").select("user_id").eq("song_id", currentSong.id),
+      supabase.from("amu_comments").select("id", { count: "exact", head: true }).eq("song_id", currentSong.id),
+    ]).then(([likesRes, commentsRes]) => {
+      const likes = likesRes.data || [];
+      setCurrentLikes({
+        isLiked: currentUser ? likes.some((l: any) => l.user_id === currentUser.id) : false,
+        count: likes.length,
+      });
+      setCurrentCommentsCount(commentsRes.count || 0);
+    });
+  }, [currentSong?.id, currentUser?.id]);
+
+  const toggleCurrentLike = async () => {
+    if (!currentUser) {
+      alert("いいねするにはログインしてください");
+      return;
+    }
+    if (!currentSong) return;
+
+    const newIsLiked = !currentLikes.isLiked;
+    const newCount = newIsLiked ? currentLikes.count + 1 : Math.max(0, currentLikes.count - 1);
+    setCurrentLikes({ isLiked: newIsLiked, count: newCount });
+
+    const supabase = createClient();
+    if (newIsLiked) {
+      await supabase.from("likes").insert({ user_id: currentUser.id, song_id: currentSong.id });
+    } else {
+      await supabase.from("likes").delete().eq("user_id", currentUser.id).eq("song_id", currentSong.id);
+    }
+  };
 
   // 再生回数のインクリメント（同じ端末・ブラウザからは1曲につき1日1回のみカウント）
   const incrementPlayCount = (songId: string) => {
@@ -762,7 +813,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       <audio ref={audioRefA} playsInline preload="auto" />
       <audio ref={audioRefB} playsInline preload="auto" />
 
-      {/* グローバルプレイヤー（画面下部固定） */}
+      {/* グローバルプレイヤー（画面下部固定：太めで洗練されたデザイン） */}
       {currentSong && (
         <div className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-2xl border-t border-slate-200/90 shadow-[0_-10px_35px_rgba(0,0,0,0.08)] z-[80] transition-all duration-300">
           {/* 超快適シークバー（広いタップ＆ドラッグ当たり判定エリア） */}
@@ -796,12 +847,17 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
             </div>
           </div>
 
-          <div className="max-w-5xl mx-auto px-3.5 sm:px-6 py-2 sm:py-2.5 flex items-center justify-between gap-2.5 sm:gap-6">
-            {/* 楽曲メタ情報 */}
+          <div className="max-w-6xl mx-auto px-3.5 sm:px-6 py-3 sm:py-3.5 flex items-center justify-between gap-3 sm:gap-6">
+            {/* 楽曲メタ情報＆いいね・コメント（左側） */}
             <div className="flex items-center gap-2.5 sm:gap-4 min-w-0 flex-1">
-              <div className="w-10 h-10 sm:w-13 sm:h-13 rounded-xl sm:rounded-2xl overflow-hidden bg-slate-100 shrink-0 shadow-sm border border-slate-200 relative group">
+              {/* カバーアート（クリックで曲詳細へ） */}
+              <Link
+                href={`/song/${currentSong.id}`}
+                className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl overflow-hidden bg-slate-100 shrink-0 shadow-sm border border-slate-200 relative group block active:scale-95 transition-transform"
+                title="曲詳細・歌詞を見る"
+              >
                 {currentSong.cover_url ? (
-                  <img src={currentSong.cover_url} alt="Cover" className="w-full h-full object-cover" />
+                  <img src={currentSong.cover_url} alt="Cover" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-slate-800 text-white font-bold text-xs">
                     AMU
@@ -809,16 +865,33 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 )}
                 {isPlaying && (
                   <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                    <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                    <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
                   </div>
                 )}
-              </div>
+              </Link>
 
-              <div className="truncate min-w-0">
+              <div className="truncate min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <h4 className="font-extrabold text-slate-900 truncate text-xs sm:text-base leading-snug">
+                  <Link
+                    href={`/song/${currentSong.id}`}
+                    className="font-extrabold text-slate-900 hover:text-indigo-600 transition-colors truncate text-xs sm:text-base leading-snug"
+                    title="曲詳細・歌詞を見る"
+                  >
                     {currentSong.title}
-                  </h4>
+                  </Link>
+
+                  {/* リリモ対応バッジ */}
+                  {currentSong.synced_lyrics && (
+                    <Link
+                      href={`/song/${currentSong.id}`}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black bg-gradient-to-r from-indigo-600 to-pink-600 text-white shadow-2xs hover:opacity-90 transition-opacity shrink-0 tracking-wider"
+                      title="リリモ文字PV対応楽曲"
+                    >
+                      <span>🎬</span>
+                      <span>Lyrimo</span>
+                    </Link>
+                  )}
+
                   {isCrossfading && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-black bg-gradient-to-r from-indigo-600 to-pink-600 text-white animate-pulse">
                       <span>✨</span>
@@ -826,23 +899,51 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2 text-xs font-medium text-slate-500 truncate mt-0.5">
+
+                <div className="flex items-center gap-3 text-xs font-medium text-slate-500 truncate mt-0.5">
                   <span className="truncate">{currentSong.artist}</span>
-                  {duration > 0 && (
-                    <span className="text-[11px] text-slate-400 font-mono shrink-0 hidden xs:inline">
-                      {formatTime(currentTime)} / {formatTime(duration)}
-                    </span>
-                  )}
+
+                  {/* いいね＆コメントアクションボタン群 */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* いいねボタン */}
+                    <button
+                      type="button"
+                      onClick={toggleCurrentLike}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold transition-all active:scale-95 cursor-pointer border ${
+                        currentLikes.isLiked
+                          ? "bg-rose-50 border-rose-200 text-rose-600"
+                          : "bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800"
+                      }`}
+                      title={currentLikes.isLiked ? "いいねを取り消す" : "いいね！"}
+                    >
+                      <svg className={`w-3.5 h-3.5 ${currentLikes.isLiked ? "fill-rose-500 text-rose-500" : "fill-none stroke-current"}`} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                      </svg>
+                      <span>{currentLikes.count}</span>
+                    </button>
+
+                    {/* コメントボタン */}
+                    <Link
+                      href={`/song/${currentSong.id}#comments`}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-800 transition-all active:scale-95 cursor-pointer"
+                      title="コメントを見る・投稿する"
+                    >
+                      <svg className="w-3.5 h-3.5 fill-none stroke-current" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      <span>{currentCommentsCount}</span>
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* 再生コントロール（シャッフル・前・再生・次） */}
-            <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
-              {/* 時間表示（モバイル向けインライン表示） */}
+            {/* 再生コントロール（シャッフル・前・再生・次・時間） */}
+            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+              {/* 時間表示 */}
               {duration > 0 && (
-                <span className="text-[10px] sm:text-xs text-slate-400 font-mono shrink-0 pr-1 select-none xs:hidden">
-                  {formatTime(currentTime)}
+                <span className="text-[11px] text-slate-400 font-mono shrink-0 hidden md:inline select-none">
+                  {formatTime(currentTime)} / {formatTime(duration)}
                 </span>
               )}
 
@@ -851,7 +952,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 type="button"
                 onClick={toggleRandom}
                 title={isRandom ? "ランダム自動再生中 (ON)" : "ランダム再生をONにする"}
-                className={`p-1.5 sm:p-2.5 rounded-full transition-all active:scale-95 cursor-pointer relative ${
+                className={`p-2 sm:p-2.5 rounded-full transition-all active:scale-95 cursor-pointer relative ${
                   isRandom
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
                     : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
@@ -882,7 +983,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 type="button"
                 onClick={togglePlay}
                 title={isPlaying ? "一時停止" : "再生"}
-                className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full bg-slate-900 hover:bg-slate-800 text-white active:scale-95 transition-all shadow-md shadow-slate-900/20 cursor-pointer"
+                className="w-11 h-11 sm:w-13 sm:h-13 flex items-center justify-center rounded-full bg-slate-900 hover:bg-slate-800 text-white active:scale-95 transition-all shadow-md shadow-slate-900/20 cursor-pointer"
               >
                 {isPlaying ? (
                   <svg className="w-4 h-4 sm:w-5 sm:h-5 fill-current" viewBox="0 0 24 24">
@@ -900,12 +1001,22 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 type="button"
                 onClick={playNextSong}
                 title="次の曲へ"
-                className="p-1.5 sm:p-2.5 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer"
+                className="p-2 sm:p-2.5 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 fill-current" viewBox="0 0 24 24">
                   <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
                 </svg>
               </button>
+
+              {/* 歌詞・曲詳細ボタン（右端） */}
+              <Link
+                href={`/song/${currentSong.id}`}
+                className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 text-xs font-bold transition-all ml-1"
+                title="曲詳細・リリモ文字PVを見る"
+              >
+                <span>歌詞・リリモ</span>
+                <span>↗</span>
+              </Link>
             </div>
           </div>
         </div>

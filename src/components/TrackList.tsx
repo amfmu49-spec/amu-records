@@ -138,11 +138,19 @@ export default function TrackList({
               
               {/* メタデータ（w-fullを排除しflex-1 min-w-0で横はみ出しを完全防止） */}
               <div className="flex-1 min-w-0 text-left py-0.5 overflow-hidden">
-                <h3 className={`font-extrabold text-sm sm:text-base md:text-xl mb-0.5 truncate tracking-tight ${isThisPlaying ? "text-indigo-600" : "text-slate-900"}`}>
-                  <Link href={`/song/${song.id}`} className="hover:underline hover:text-indigo-600 transition-colors">
-                    {song.title}
-                  </Link>
-                </h3>
+                <div className="flex items-center gap-1.5 flex-wrap mb-0.5 min-w-0">
+                  <h3 className={`font-extrabold text-sm sm:text-base md:text-xl truncate tracking-tight ${isThisPlaying ? "text-indigo-600" : "text-slate-900"}`}>
+                    <Link href={`/song/${song.id}`} className="hover:underline hover:text-indigo-600 transition-colors">
+                      {song.title}
+                    </Link>
+                  </h3>
+                  {song.synced_lyrics && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black bg-gradient-to-r from-indigo-600 to-pink-600 text-white shrink-0 shadow-2xs tracking-wider">
+                      <span>🎬</span>
+                      <span>Lyrimo対応</span>
+                    </span>
+                  )}
+                </div>
                 {artists.length > 0 ? (
                   <div className="flex items-center gap-1.5 flex-wrap max-w-full">
                     {/* 重なりアバターアイコン */}

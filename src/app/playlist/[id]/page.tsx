@@ -282,7 +282,7 @@ export default function PlaylistDetailPage({
   const coverUrls = songs.map((s) => s.cover_url).filter(Boolean);
 
   return (
-    <main className="min-h-screen bg-slate-50/50 text-slate-900 pb-32 font-sans selection:bg-indigo-500 selection:text-white">
+    <main className="min-h-screen bg-white text-slate-900 pb-32 font-sans selection:bg-indigo-500 selection:text-white">
       {/* 戻るナビゲーション */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8">
         <Link

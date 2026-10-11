@@ -59,7 +59,7 @@ export default async function ArtistPage({ params }: { params: Promise<{ id: str
   const safeYoutubeEmbed = isSafeYouTubeEmbed(profile.youtube_embed_url) ? profile.youtube_embed_url : null;
 
   return (
-    <main className="min-h-screen bg-slate-50/50 text-slate-900 pb-32 font-sans">
+    <main className="min-h-screen bg-white text-slate-900 pb-32 font-sans">
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200 px-4 sm:px-6 py-2 sm:py-3 md:py-3.5 flex justify-between items-center shadow-sm">
         <div className="flex items-center shrink">
           <Link href="/" className="relative z-20 block shrink">

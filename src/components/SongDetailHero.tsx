@@ -154,9 +154,17 @@ export default function SongDetailHero({
 
         {/* 楽曲メタデータとアクション */}
         <div className="flex-1 w-full text-center md:text-left min-w-0">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold tracking-wider uppercase mb-3 border border-indigo-500/30">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
-            Song Single
+          <div className="flex items-center gap-2 justify-center md:justify-start flex-wrap mb-3">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold tracking-wider uppercase border border-indigo-500/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
+              Song Single
+            </div>
+            {song.synced_lyrics && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-indigo-500 to-pink-500 text-white text-xs font-black shadow-md tracking-wider">
+                <span>🎬</span>
+                <span>Lyrimo対応</span>
+              </span>
+            )}
           </div>
 
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-tight leading-tight mb-4 break-words">

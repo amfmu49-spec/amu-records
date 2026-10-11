@@ -68,7 +68,15 @@ export default function HeroPlayer({ song }: { song: any }) {
 
       {/* 曲情報 */}
       <div className="relative z-10 text-center md:text-left flex-1 w-full min-w-0">
-        <p className="text-indigo-400 font-bold tracking-widest text-xs sm:text-sm mb-2 uppercase">Featured Track</p>
+        <div className="flex items-center gap-2 justify-center md:justify-start flex-wrap mb-2">
+          <p className="text-indigo-400 font-bold tracking-widest text-xs sm:text-sm uppercase">Featured Track</p>
+          {song.synced_lyrics && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-gradient-to-r from-indigo-500 to-pink-500 text-white shadow-sm tracking-wider">
+              <span>🎬</span>
+              <span>Lyrimo対応</span>
+            </span>
+          )}
+        </div>
         <h2 className="text-2xl sm:text-4xl md:text-5xl font-black text-white tracking-tight mb-3 line-clamp-2 break-words">
           <Link href={`/song/${song.id}`} className="hover:underline hover:text-indigo-200 transition-colors">
             {song.title}
