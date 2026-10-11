@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useAudioPlayer } from "@/components/AudioPlayerProvider";
-import { parseLrc, findActiveLyricIndex, formatSecondsToTimestamp } from "@/utils/lrcParser";
+import { parseLrc, findActiveLyricIndex } from "@/utils/lrcParser";
 
 interface SongLyricsPlayerProps {
   syncedLyrics?: string | null;
@@ -372,13 +372,16 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
       {/* ＝＝＝ モード 2: 📜 ハイライト一覧モード ＝＝＝ */}
       {viewMode === "highlight" && (
         <div
-          className={`overflow-y-auto rounded-2xl p-3 sm:p-5 transition-all ${
+          style={{
+            fontFamily: '"Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Hiragino Mincho Pro", "Noto Serif JP", serif',
+          }}
+          className={`overflow-y-auto rounded-2xl p-4 sm:p-8 transition-all font-serif ${
             isFullscreen
-              ? "flex-1 bg-slate-900 text-slate-100"
-              : "h-80 sm:h-96 md:h-[26rem] bg-slate-50 border border-slate-200/90"
+              ? "flex-1 bg-slate-950 text-slate-100"
+              : "h-80 sm:h-96 md:h-[28rem] bg-white border border-slate-100 shadow-xs"
           }`}
         >
-          <div className="max-w-2xl mx-auto divide-y divide-slate-200/60 dark:divide-slate-800 space-y-1">
+          <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6 py-6 px-2">
             {lyricLines.map((line, idx) => {
               const isActive = idx === activeIndex;
 
@@ -387,40 +390,17 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
                   key={line.id}
                   ref={isActive ? activeListRef : null}
                   onClick={() => handleSeek(line.time)}
-                  className={`group p-3 sm:p-3.5 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                  className={`cursor-pointer transition-all duration-300 select-none py-1.5 px-3 rounded-xl ${
                     isActive
-                      ? "bg-indigo-600 text-white font-black shadow-md shadow-indigo-600/20 translate-x-1"
+                      ? isFullscreen
+                        ? "text-white font-bold text-lg sm:text-2xl scale-[1.03] origin-left drop-shadow-md"
+                        : "text-slate-950 font-bold text-lg sm:text-2xl scale-[1.03] origin-left drop-shadow-xs"
                       : isFullscreen
-                      ? "text-slate-300 hover:bg-slate-800"
-                      : "text-slate-700 hover:bg-white hover:shadow-2xs"
+                      ? "text-slate-500 hover:text-slate-300 text-base sm:text-lg leading-relaxed font-normal"
+                      : "text-slate-400 hover:text-slate-600 text-base sm:text-lg leading-relaxed font-normal"
                   }`}
                 >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <span
-                      className={`text-[10px] font-mono shrink-0 px-2 py-0.5 rounded-md ${
-                        isActive
-                          ? "bg-white/20 text-white font-bold"
-                          : "bg-slate-200/70 text-slate-500"
-                      }`}
-                    >
-                      {formatSecondsToTimestamp(line.time).replace(/[\[\]]/g, "")}
-                    </span>
-                    <span
-                      className={`text-sm sm:text-base leading-relaxed truncate ${
-                        isActive ? "font-black scale-102" : "font-semibold"
-                      }`}
-                    >
-                      {line.text}
-                    </span>
-                  </div>
-
-                  <span
-                    className={`text-xs shrink-0 transition-transform ${
-                      isActive ? "text-amber-300 font-bold" : "text-slate-400 opacity-0 group-hover:opacity-100"
-                    }`}
-                  >
-                    ▶
-                  </span>
+                  <p className="tracking-wide leading-relaxed">{line.text}</p>
                 </div>
               );
             })}
