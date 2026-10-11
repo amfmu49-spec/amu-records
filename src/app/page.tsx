@@ -9,6 +9,7 @@ import SongSearchSection from "@/components/SongSearchSection";
 import CommunityBoard from "@/components/CommunityBoard";
 import AnnouncementBanner from "@/components/AnnouncementBanner";
 import FeaturedPlaylistsSection from "@/components/FeaturedPlaylistsSection";
+import VisitorCounter from "@/components/VisitorCounter";
 import { connection } from "next/server";
 
 export default async function Home() {
@@ -75,6 +76,11 @@ export default async function Home() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-12">
         {/* 最新のお知らせバナー（配信されたお知らせがトップ最上部にリアルタイム表示） */}
         <AnnouncementBanner />
+
+        {/* 訪問者数バッジ（TODAY & TOTAL / 検索の上） */}
+        <div className="flex justify-center sm:justify-start mb-4 sm:mb-6">
+          <VisitorCounter />
+        </div>
 
         {/* 上部検索バー ＆ リアルタイム検索システム */}
         <SongSearchSection songs={songs || []} currentUserId={user?.id}>
