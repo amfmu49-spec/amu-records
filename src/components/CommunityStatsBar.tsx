@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import VisitorCounter from "@/components/VisitorCounter";
 
 export interface ArtistSummary {
   id: string;
@@ -77,6 +78,9 @@ export default function CommunityStatsBar({
             {isOpen ? "閉じる ▲" : "一覧を表示 ▼"}
           </span>
         </button>
+
+        {/* 訪問者数バッジ（TODAY & TOTAL / 12時間重複防止） */}
+        <VisitorCounter />
       </div>
 
       {/* タップ時に展開される参加クリエイター一覧 */}
