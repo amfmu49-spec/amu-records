@@ -250,26 +250,59 @@ export default function ProfilePage() {
   };
 
   const [editingSongId, setEditingSongId] = useState<string | null>(null);
+  const [deletingSongId, setDeletingSongId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editCoArtist1, setEditCoArtist1] = useState("");
   const [editCoArtist2, setEditCoArtist2] = useState("");
   const [editSyncedLyrics, setEditSyncedLyrics] = useState("");
 
-  const handleDeleteSong = async (songId: string) => {
+  const handleDeleteSong = async (song: any) => {
     if (!user) return;
-    if (!confirm("本当にこの曲を削除しますか？\n(※関連するコメントなどもすべて削除されます)")) return;
-    
-    // DBから削除 (本人チェック: user_id = user.id)
-    const { error } = await supabase.from("songs").delete().eq("id", songId).eq("user_id", user.id);
-    if (error) {
-      alert("削除に失敗しました: " + error.message);
-      return;
+    const ok = window.confirm(
+      `楽曲「${song.title}」を削除してもよろしいですか？\n\n※この操作は取り消せません。\n※楽曲に紐づくいいね、コメント、プレイリスト登録もすべて削除されます。`
+    );
+    if (!ok) return;
+
+    try {
+      setDeletingSongId(song.id);
+
+      // 1. 専用RPCで関連データ（likes, comments, playlist_songs）を含めて安全に一括削除
+      const { data, error: rpcError } = await supabase.rpc("delete_user_song", {
+        p_song_id: song.id,
+      });
+
+      if (!rpcError && data && data.success) {
+        setMySongs((prev) => prev.filter((s) => s.id !== song.id));
+        alert(`楽曲「${song.title}」を完全に削除しました。`);
+        return;
+      }
+
+      // 2. RPC未適用時のフォールバック：関連データを個別に削除してから songs レコードを削除
+      await Promise.allSettled([
+        supabase.from("likes").delete().eq("song_id", song.id),
+        supabase.from("comments").delete().eq("song_id", song.id),
+        supabase.from("playlist_songs").delete().eq("song_id", song.id),
+      ]);
+
+      const { error: deleteError } = await supabase
+        .from("songs")
+        .delete()
+        .eq("id", song.id)
+        .eq("user_id", user.id);
+
+      if (deleteError) {
+        alert("削除に失敗しました: " + deleteError.message);
+        return;
+      }
+
+      setMySongs((prev) => prev.filter((s) => s.id !== song.id));
+      alert(`楽曲「${song.title}」を完全に削除しました。`);
+    } catch (err: any) {
+      alert("削除中にエラーが発生しました: " + (err?.message || err));
+    } finally {
+      setDeletingSongId(null);
     }
-    
-    // UIを更新
-    setMySongs(mySongs.filter(s => s.id !== songId));
-    alert("曲を削除しました。");
   };
 
   const handleBroadcastAnnouncement = async (e: React.FormEvent) => {
@@ -901,10 +934,12 @@ export default function ProfilePage() {
                           編集
                         </button>
                         <button 
-                          onClick={() => handleDeleteSong(song.id)}
-                          className="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors"
+                          type="button"
+                          disabled={deletingSongId === song.id}
+                          onClick={() => handleDeleteSong(song)}
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 cursor-pointer"
                         >
-                          削除
+                          {deletingSongId === song.id ? "削除中..." : "削除"}
                         </button>
                       </div>
                     </>
