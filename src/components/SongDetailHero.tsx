@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAudioPlayer } from "@/components/AudioPlayerProvider";
 import { createClient } from "@/utils/supabase/client";
+import { preloadAudioToCache } from "@/utils/audioCache";
 import Link from "next/link";
 import UserRoleBadge from "@/components/UserRoleBadge";
 import AddToPlaylistModal from "@/components/AddToPlaylistModal";
@@ -24,6 +25,12 @@ export default function SongDetailHero({
 }: SongDetailHeroProps) {
   const { playSong, currentSong, isPlaying } = useAudioPlayer();
   const supabase = createClient();
+
+  useEffect(() => {
+    if (song?.file_url) {
+      preloadAudioToCache(song.file_url);
+    }
+  }, [song?.file_url]);
 
   const [isLiked, setIsLiked] = useState(initialIsLiked);
   const [likeCount, setLikeCount] = useState(initialLikeCount);

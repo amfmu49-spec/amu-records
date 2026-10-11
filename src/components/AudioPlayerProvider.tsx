@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
+import { getCachedAudioUrl, preloadAudioToCache } from "@/utils/audioCache";
 
 export type Song = {
   id: string;
@@ -153,6 +154,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     if (!songs || songs.length === 0) return;
     const normalized = songs.map(normalizeSong).filter((s) => s.file_url);
     setPlaylistState(normalized);
+    // バックグラウンドで先頭3曲を自動キャッシュ（Supabase通信量の削減 & 爆速化）
+    normalized.slice(0, 3).forEach((s) => preloadAudioToCache(s.file_url));
   }, []);
 
   // 次に再生するランダムな曲を選択
@@ -172,7 +175,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
   }, [currentSong]);
 
   // --- 自動進行時の本格的クロスフェード（曲終了前3.0秒間） ---
-  const executeAutoCrossfade = useCallback((nextSong: Song) => {
+  const executeAutoCrossfade = useCallback(async (nextSong: Song) => {
     if (isFadingRef.current) return;
 
     const currentDeck = activeDeckRef.current;
@@ -190,9 +193,12 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     isFadingRef.current = true;
     setIsCrossfading(true);
 
+    // キャッシュ済みのBlob URLを取得（未キャッシュなら即座に直接URLを返し裏でキャッシュ）
+    const audioUrlToPlay = await getCachedAudioUrl(nextSong.file_url);
+
     // 次の曲のソースがプリロードされていなければセット
-    if (!nextAudio.src || !nextAudio.src.includes(nextSong.file_url)) {
-      nextAudio.src = nextSong.file_url;
+    if (!nextAudio.src || (!nextAudio.src.includes(audioUrlToPlay) && !nextAudio.src.includes(nextSong.file_url))) {
+      nextAudio.src = audioUrlToPlay;
       nextAudio.load();
     }
     nextAudio.volume = 0;
@@ -252,14 +258,16 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
             historyRef.current.shift();
           }
 
-          // クロスフェード完了後、次の曲をプリロード
-          setTimeout(() => {
+          // クロスフェード完了後、次の曲をプリロード＆キャッシュ
+          setTimeout(async () => {
             if (isRandomRef.current) {
               const next = pickNextRandomSong();
               if (next) {
                 nextSongRef.current = next;
+                preloadAudioToCache(next.file_url);
+                const preloadUrl = await getCachedAudioUrl(next.file_url);
                 if (currentAudio) {
-                  currentAudio.src = next.file_url;
+                  currentAudio.src = preloadUrl;
                   currentAudio.load();
                 }
               }
@@ -293,7 +301,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
   }, [pickNextRandomSong]);
 
   // --- 手動スキップ / 曲変更（手動時も滑らかなクロスフェード） ---
-  const transitionToSong = useCallback((song: Song) => {
+  const transitionToSong = useCallback(async (song: Song) => {
     if (fadeIntervalRef.current) {
       clearInterval(fadeIntervalRef.current);
       fadeIntervalRef.current = null;
@@ -308,12 +316,15 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
 
     if (!nextAudio) return;
 
+    // キャッシュ済みのBlob URLを取得
+    const audioUrlToPlay = await getCachedAudioUrl(song.file_url);
+
     // 前の曲がそもそも再生されていない場合（最初の再生や、一時停止中からの再生）は即座に再生する
     const isFirstPlayOrPaused = !currentAudio || currentAudio.paused || currentAudio.currentTime === 0;
 
     if (isFirstPlayOrPaused) {
-      if (!nextAudio.src || !nextAudio.src.includes(song.file_url)) {
-        nextAudio.src = song.file_url;
+      if (!nextAudio.src || (!nextAudio.src.includes(audioUrlToPlay) && !nextAudio.src.includes(song.file_url))) {
+        nextAudio.src = audioUrlToPlay;
       }
       nextAudio.volume = 1;
       nextAudio.currentTime = 0;
@@ -329,15 +340,17 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       historyRef.current.push(song.id);
       if (historyRef.current.length > 20) historyRef.current.shift();
 
-      // スキップ後、次の曲をプリロード
-      setTimeout(() => {
+      // スキップ後、次の曲をプリロード＆キャッシュ
+      setTimeout(async () => {
         if (isRandomRef.current) {
           const next = pickNextRandomSong();
           if (next) {
             nextSongRef.current = next;
+            preloadAudioToCache(next.file_url);
+            const preloadUrl = await getCachedAudioUrl(next.file_url);
             const idleDeck = activeDeckRef.current === "A" ? audioRefB.current : audioRefA.current;
             if (idleDeck) {
-              idleDeck.src = next.file_url;
+              idleDeck.src = preloadUrl;
               idleDeck.load();
             }
           }
@@ -350,8 +363,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     isFadingRef.current = true;
     setIsCrossfading(true);
 
-    if (!nextAudio.src || !nextAudio.src.includes(song.file_url)) {
-      nextAudio.src = song.file_url;
+    if (!nextAudio.src || (!nextAudio.src.includes(audioUrlToPlay) && !nextAudio.src.includes(song.file_url))) {
+      nextAudio.src = audioUrlToPlay;
       nextAudio.load();
     }
     nextAudio.volume = 0;
@@ -411,14 +424,16 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
             historyRef.current.shift();
           }
 
-          // クロスフェード完了後、次の曲をプリロード
-          setTimeout(() => {
+          // クロスフェード完了後、次の曲をプリロード＆キャッシュ
+          setTimeout(async () => {
             if (isRandomRef.current) {
               const next = pickNextRandomSong();
               if (next) {
                 nextSongRef.current = next;
+                preloadAudioToCache(next.file_url);
+                const preloadUrl = await getCachedAudioUrl(next.file_url);
                 if (currentAudio) {
-                  currentAudio.src = next.file_url;
+                  currentAudio.src = preloadUrl;
                   currentAudio.load();
                 }
               }
