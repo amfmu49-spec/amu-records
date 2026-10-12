@@ -33,7 +33,7 @@ export default async function Home() {
     // 毎週月曜0時にリセットされる週間再生回数順（フォールバックで累計再生数）
     supabase.from("songs").select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(user_id), amu_comments(id)").order("weekly_play_count", { ascending: false }).order("play_count", { ascending: false }).limit(5),
     supabase.from("playlists").select("id, title, description, created_at, profiles:profiles!fk_playlist_profile(id, artist_name, avatar_url, role), playlist_songs(id, song_id, songs:songs!fk_playlist_song(cover_url))").eq("is_public", true).order("created_at", { ascending: false }).limit(6),
-    supabase.from("amu_comments").select("id, song_id, created_at").order("created_at", { ascending: false }).limit(10),
+    supabase.from("amu_comments").select("id, song_id, created_at").order("created_at", { ascending: false }).limit(5),
   ]);
 
   // アーティストごとの参加曲数を集計（単独＋コラボ参加含む）
@@ -60,28 +60,30 @@ export default async function Home() {
     song_count: songCountByArtist.get(p.id) || 0,
   })).sort((a, b) => b.song_count - a.song_count);
 
-  // 最新コメント一覧の整形（曲名とクリエイター名を結合、コメント本文は非表示）
-  const songMap = new Map<string, { title: string; artist_name: string }>();
+  // 最新コメント一覧の整形（曲名、クリエイター名、いいね数を結合、コメント本文は非表示）
+  const songMap = new Map<string, { title: string; artist_name: string; likes_count: number }>();
   songs?.forEach((s: any) => {
     songMap.set(s.id, {
       title: s.title || "楽曲",
       artist_name: s.artist || s.profiles?.artist_name || "クリエイター",
+      likes_count: s.likes?.length || 0,
     });
   });
 
-  const recentComments: CommentTickerItem[] = (latestComments || [])
-    .map((c: any) => {
-      const song = songMap.get(c.song_id);
-      if (!song) return null;
-      return {
+  const recentComments: CommentTickerItem[] = [];
+  (latestComments || []).forEach((c: any) => {
+    const song = songMap.get(c.song_id);
+    if (song) {
+      recentComments.push({
         id: c.id,
         song_id: c.song_id,
         song_title: song.title,
         artist_name: song.artist_name,
+        likes_count: song.likes_count,
         created_at: c.created_at,
-      };
-    })
-    .filter((item): item is CommentTickerItem => item !== null);
+      });
+    }
+  });
 
   // サーバー側でランダムな1曲を選ぶ
   const randomSong = songs && songs.length > 0 ? songs[Math.floor(Math.random() * songs.length)] : null;

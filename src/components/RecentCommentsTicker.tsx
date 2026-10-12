@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 
@@ -9,6 +9,7 @@ export interface CommentTickerItem {
   song_id: string;
   song_title: string;
   artist_name: string;
+  likes_count: number;
   created_at: string;
 }
 
@@ -20,44 +21,46 @@ export default function RecentCommentsTicker({ initialComments = [] }: RecentCom
   const [comments, setComments] = useState<CommentTickerItem[]>(initialComments);
   const supabase = createClient();
 
-  // 最新コメント一覧の取得処理
+  // 最新コメント一覧の取得処理（直近5件）
   const fetchLatestComments = async () => {
     try {
       const { data: commentsData, error: cErr } = await supabase
         .from("amu_comments")
         .select("id, song_id, created_at")
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(5);
 
       if (cErr || !commentsData || commentsData.length === 0) return;
 
       const songIds = [...new Set(commentsData.map((c) => c.song_id))];
       const { data: songsData } = await supabase
         .from("songs")
-        .select("id, title, artist, profiles:profiles!fk_user_profile(artist_name)")
+        .select("id, title, artist, profiles:profiles!fk_user_profile(artist_name), likes(user_id)")
         .in("id", songIds);
 
-      const songMap = new Map<string, { title: string; artist_name: string }>();
+      const songMap = new Map<string, { title: string; artist_name: string; likes_count: number }>();
       songsData?.forEach((s: any) => {
         songMap.set(s.id, {
           title: s.title || "曲",
           artist_name: s.artist || s.profiles?.artist_name || "クリエイター",
+          likes_count: s.likes?.length || 0,
         });
       });
 
-      const items: CommentTickerItem[] = commentsData
-        .map((c) => {
-          const song = songMap.get(c.song_id);
-          if (!song) return null;
-          return {
+      const items: CommentTickerItem[] = [];
+      commentsData.forEach((c) => {
+        const song = songMap.get(c.song_id);
+        if (song) {
+          items.push({
             id: c.id,
             song_id: c.song_id,
             song_title: song.title,
             artist_name: song.artist_name,
+            likes_count: song.likes_count,
             created_at: c.created_at,
-          };
-        })
-        .filter((item): item is CommentTickerItem => item !== null);
+          });
+        }
+      });
 
       if (items.length > 0) {
         setComments(items);
@@ -154,14 +157,14 @@ export default function RecentCommentsTicker({ initialComments = [] }: RecentCom
               return (
                 <Link
                   key={`${item.id}-${index}`}
-                  href={`/song/${item.song_id}#comments`}
-                  className="flex items-center gap-2 px-3 py-0.5 text-xs text-slate-700 hover:text-indigo-600 transition-colors whitespace-nowrap cursor-pointer select-none"
-                  title="クリックしてこの曲のコメントを見る"
+                  href={`/song/${item.song_id}#comment-${item.id}`}
+                  className="flex items-center gap-2 px-3 py-0.5 text-xs text-slate-700 hover:text-indigo-600 transition-colors whitespace-nowrap cursor-pointer select-none group/item"
+                  title="クリックしてこのコメントにジャンプ"
                 >
                   <span className="font-mono font-bold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200 text-[10px] tracking-tight">
                     {timeText}
                   </span>
-                  <span className="font-semibold text-slate-900 hover:underline">
+                  <span className="font-semibold text-slate-900 group-hover/item:text-indigo-600 group-hover/item:underline">
                     {item.song_title}
                     <span className="text-slate-400 font-normal mx-1">/</span>
                     <span className="text-slate-600">{item.artist_name}</span>
@@ -169,6 +172,15 @@ export default function RecentCommentsTicker({ initialComments = [] }: RecentCom
                   <span className="text-slate-500 font-normal text-[11px]">
                     が コメントされました
                   </span>
+
+                  {/* 楽曲いいね数バッジ */}
+                  {typeof item.likes_count === "number" && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-50 border border-rose-200/70 text-rose-600 text-[10px] font-bold shadow-2xs">
+                      <span className="text-[10px]">❤️</span>
+                      <span>{item.likes_count}</span>
+                    </span>
+                  )}
+
                   <span className="text-slate-300 font-bold ml-3 mr-1">•</span>
                 </Link>
               );

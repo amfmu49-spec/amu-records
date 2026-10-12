@@ -46,7 +46,7 @@ button, a, [role="button"] {
 .animate-ticker {
   display: flex;
   width: max-content;
-  animation: ticker-slide 35s linear infinite;
+  animation: ticker-slide 50s linear infinite;
   will-change: transform;
 }
 

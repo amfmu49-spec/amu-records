@@ -32,11 +32,35 @@ export default function CommentSection({
   const [newComment, setNewComment] = useState("");
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [highlightedCommentId, setHighlightedCommentId] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
     fetchComments();
   }, [songId]);
+
+  // URLハッシュ（#comment-xxx）があれば該当コメントまでスクロール＆ハイライト
+  useEffect(() => {
+    if (isLoading || comments.length === 0) return;
+    if (typeof window === "undefined") return;
+
+    const hash = window.location.hash;
+    if (hash && hash.startsWith("#comment-")) {
+      const targetElementId = hash.replace("#", "");
+      const commentId = targetElementId.replace("comment-", "");
+
+      const timer = setTimeout(() => {
+        const el = document.getElementById(targetElementId);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          setHighlightedCommentId(commentId);
+          setTimeout(() => setHighlightedCommentId(null), 4000);
+        }
+      }, 350);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, comments]);
 
   const fetchComments = async () => {
     setIsLoading(true);
@@ -159,71 +183,89 @@ export default function CommentSection({
         {parentComments.length === 0 ? (
           <p className="text-center text-sm text-slate-400 py-4">まだコメントはありません。最初のコメントをしてみましょう！</p>
         ) : (
-          parentComments.map(comment => (
-            <div key={comment.id} className="space-y-3">
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-200 shrink-0">
-                  {comment.profiles?.avatar_url && (
-                    <img src={comment.profiles.avatar_url} alt="avatar" className="w-full h-full object-cover" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <div className="bg-white px-4 py-3 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-sm group relative">
-                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                      <p className="font-bold text-slate-800">{comment.profiles?.artist_name}</p>
-                      <UserRoleBadge role={comment.profiles?.role} size="xs" />
+          parentComments.map(comment => {
+            const isHighlighted = highlightedCommentId === comment.id;
+            return (
+              <div 
+                key={comment.id} 
+                id={`comment-${comment.id}`}
+                className={`space-y-3 p-2 rounded-2xl transition-all duration-500 scroll-mt-24 ${
+                  isHighlighted ? "bg-indigo-50 ring-2 ring-indigo-500 shadow-md scale-[1.01]" : ""
+                }`}
+              >
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-200 shrink-0">
+                    {comment.profiles?.avatar_url && (
+                      <img src={comment.profiles.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="bg-white px-4 py-3 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-sm group relative">
+                      <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                        <p className="font-bold text-slate-800">{comment.profiles?.artist_name}</p>
+                        <UserRoleBadge role={comment.profiles?.role} size="xs" />
+                      </div>
+                      <p className="text-slate-600 whitespace-pre-wrap">{comment.content}</p>
                     </div>
-                    <p className="text-slate-600 whitespace-pre-wrap">{comment.content}</p>
-                  </div>
-                  <div className="flex items-center gap-4 mt-1 ml-2 text-xs text-slate-400">
-                    <span>{new Date(comment.created_at).toLocaleDateString()}</span>
-                    {currentUserId && (
-                      <button type="button" onClick={() => setReplyingTo(comment.id)} className="hover:text-indigo-500 font-medium transition-colors cursor-pointer select-none">
-                        返信
-                      </button>
-                    )}
-                    {currentUserId === comment.user_id && (
-                      <button type="button" onClick={() => handleDelete(comment.id)} className="hover:text-red-500 font-medium transition-colors cursor-pointer select-none">
-                        削除
-                      </button>
-                    )}
+                    <div className="flex items-center gap-4 mt-1 ml-2 text-xs text-slate-400">
+                      <span>{new Date(comment.created_at).toLocaleDateString()}</span>
+                      {currentUserId && (
+                        <button type="button" onClick={() => setReplyingTo(comment.id)} className="hover:text-indigo-500 font-medium transition-colors cursor-pointer select-none">
+                          返信
+                        </button>
+                      )}
+                      {currentUserId === comment.user_id && (
+                        <button type="button" onClick={() => handleDelete(comment.id)} className="hover:text-red-500 font-medium transition-colors cursor-pointer select-none">
+                          削除
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* 返信一覧 */}
-              {getReplies(comment.id).length > 0 && (
-                <div className="pl-11 space-y-3">
-                  {getReplies(comment.id).map(reply => (
-                    <div key={reply.id} className="flex gap-3">
-                      <div className="w-6 h-6 rounded-full overflow-hidden bg-slate-200 shrink-0">
-                        {reply.profiles?.avatar_url && (
-                          <img src={reply.profiles.avatar_url} alt="avatar" className="w-full h-full object-cover" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="bg-white px-3 py-2 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-sm">
-                          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                            <p className="font-bold text-slate-800 text-xs">{reply.profiles?.artist_name}</p>
-                            <UserRoleBadge role={reply.profiles?.role} size="xs" />
+                {/* 返信一覧 */}
+                {getReplies(comment.id).length > 0 && (
+                  <div className="pl-11 space-y-3">
+                    {getReplies(comment.id).map(reply => {
+                      const isReplyHighlighted = highlightedCommentId === reply.id;
+                      return (
+                        <div 
+                          key={reply.id} 
+                          id={`comment-${reply.id}`}
+                          className={`flex gap-3 p-1.5 rounded-xl transition-all duration-500 scroll-mt-24 ${
+                            isReplyHighlighted ? "bg-indigo-50 ring-2 ring-indigo-500 shadow-md scale-[1.01]" : ""
+                          }`}
+                        >
+                          <div className="w-6 h-6 rounded-full overflow-hidden bg-slate-200 shrink-0">
+                            {reply.profiles?.avatar_url && (
+                              <img src={reply.profiles.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                            )}
                           </div>
-                          <p className="text-slate-600 whitespace-pre-wrap">{reply.content}</p>
+                          <div className="flex-1">
+                            <div className="bg-white px-3 py-2 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 text-sm">
+                              <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                                <p className="font-bold text-slate-800 text-xs">{reply.profiles?.artist_name}</p>
+                                <UserRoleBadge role={reply.profiles?.role} size="xs" />
+                              </div>
+                              <p className="text-slate-600 whitespace-pre-wrap">{reply.content}</p>
+                            </div>
+                            <div className="flex items-center gap-3 mt-1 ml-2 text-[10px] text-slate-400">
+                              <span>{new Date(reply.created_at).toLocaleDateString()}</span>
+                              {currentUserId === reply.user_id && (
+                                <button type="button" onClick={() => handleDelete(reply.id)} className="hover:text-red-500 transition-colors cursor-pointer select-none">
+                                  削除
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3 mt-1 ml-2 text-[10px] text-slate-400">
-                          <span>{new Date(reply.created_at).toLocaleDateString()}</span>
-                          {currentUserId === reply.user_id && (
-                            <button type="button" onClick={() => handleDelete(reply.id)} className="hover:text-red-500 transition-colors cursor-pointer select-none">
-                              削除
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
 

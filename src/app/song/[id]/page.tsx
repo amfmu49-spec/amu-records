@@ -172,7 +172,7 @@ export default async function SongPage({ params }: SongPageProps) {
         </div>
 
         {/* コメントセクション */}
-        <div className="bg-white rounded-[2rem] border border-slate-200 p-6 sm:p-10 shadow-sm mb-12">
+        <div id="comments" className="bg-white rounded-[2rem] border border-slate-200 p-6 sm:p-10 shadow-sm mb-12 scroll-mt-24">
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
             <h2 className="text-xl sm:text-2xl font-bold text-slate-800 flex items-center gap-3">
               <span className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100">
