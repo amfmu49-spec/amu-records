@@ -105,42 +105,52 @@ export default function TrackList({
             <div key={song.id} className="flex flex-col min-w-0">
               <div className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 md:p-5 transition-all duration-300 hover:shadow-lg flex flex-row items-center gap-2.5 sm:gap-4 group relative z-10 overflow-hidden">
               
-              {/* カバーアート＆再生ボタン、およびその下のMOVIE絵文字ボタン */}
-              <div className="flex flex-col items-center justify-center shrink-0 gap-1 sm:gap-1.5">
+              {/* カバーアート＆中央の再生マーク、および再生マーク真下のMOVIE絵文字ボタン */}
+              <div className="relative h-14 w-14 sm:h-18 sm:w-18 md:h-20 md:w-20 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden shrink-0 shadow-2xs group/cover">
+                {/* ランクバッジ（人気トラック時） */}
+                {showRank && (
+                  <div className="absolute top-0 left-0 w-5 h-5 sm:w-6 sm:h-6 bg-indigo-600/90 backdrop-blur text-white font-black rounded-br-lg flex items-center justify-center text-[10px] sm:text-xs z-20 shadow-md border-b border-r border-indigo-500/50">
+                    {index + 1}
+                  </div>
+                )}
+
+                {/* 背景ジャケット画像 */}
+                {song.cover_url ? (
+                  <img
+                    src={toCdnUrl(song.cover_url)}
+                    alt="cover"
+                    className={`w-full h-full object-cover transition-transform duration-500 ${isThisPlaying ? "scale-105" : "group-hover/cover:scale-105"}`}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-slate-100">
+                    <svg className="w-6 h-6 sm:w-8 sm:h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+                  </div>
+                )}
+
+                {/* カバーアート全体をクリックで再生（再生ボタン領域） */}
                 <button 
                   type="button"
-                  className="relative h-14 w-14 sm:h-18 sm:w-18 md:h-20 md:w-20 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden shrink-0 cursor-pointer active:scale-95 transition-transform text-left p-0 shadow-2xs"
+                  className="absolute inset-0 w-full h-full bg-black/25 sm:bg-black/20 hover:bg-black/40 flex flex-col items-center justify-center cursor-pointer transition-colors z-10 p-0"
                   onClick={() => playSong({ id: song.id, title: song.title, file_url: song.file_url, cover_url: song.cover_url, artist: artistName }, songs)}
-                  title="再生 / 一時停止"
+                  title={isThisPlaying ? "一時停止" : "再生"}
                 >
-                  {showRank && (
-                    <div className="absolute top-0 left-0 w-5 h-5 sm:w-6 sm:h-6 bg-indigo-600/90 backdrop-blur text-white font-black rounded-br-lg flex items-center justify-center text-[10px] sm:text-xs z-20 shadow-md border-b border-r border-indigo-500/50">
-                      {index + 1}
-                    </div>
-                  )}
-                  {song.cover_url ? (
-                    <img src={toCdnUrl(song.cover_url)} alt="cover" className={`w-full h-full object-cover transition-transform duration-500 ${isThisPlaying ? "scale-110" : "group-hover:scale-110"}`} />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-slate-100">
-                      <svg className="w-6 h-6 sm:w-8 sm:h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
-                    </div>
-                  )}
-
-                  {/* オーバーレイ再生インジケータ */}
-                  <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity pointer-events-none ${isThisPlaying ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                  {/* 中央の再生マーク */}
+                  <div className={`text-white drop-shadow-md transition-transform ${song.synced_lyrics ? "-translate-y-1 sm:-translate-y-1.5" : ""}`}>
                     {isThisPlaying ? (
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 items-end h-4 sm:h-5">
                         <div className="w-1 sm:w-1.5 h-3 sm:h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                        <div className="w-1 sm:w-1.5 h-4 sm:h-6 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                        <div className="w-1 sm:w-1.5 h-4 sm:h-5 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
                         <div className="w-1 sm:w-1.5 h-3 sm:h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                       </div>
                     ) : (
-                      <svg className="w-6 h-6 sm:w-8 sm:h-8 text-white fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7 fill-current ml-0.5" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                      </svg>
                     )}
                   </div>
                 </button>
 
-                {/* 再生マークの下：リリモ対応曲のMOVIE絵文字ボタン（タップで小窓が現れる） */}
+                {/* ★ 再生マークの「真下」：リリモ対応曲のMOVIE絵文字ボタン（タップで小窓が現れる） */}
                 {song.synced_lyrics && (
                   <button
                     type="button"
@@ -152,10 +162,10 @@ export default function TrackList({
                       });
                     }}
                     title="🎬 タップしてリリモ小窓を開く（文字PV・リリック）"
-                    className="inline-flex items-center justify-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-0.5 rounded-md bg-gradient-to-r from-indigo-50 to-pink-50 hover:from-indigo-100 hover:to-pink-100 text-indigo-700 border border-indigo-200/90 text-[10px] sm:text-xs font-black shadow-2xs hover:scale-105 active:scale-95 transition-all cursor-pointer group/movie"
+                    className="absolute bottom-1 left-1/2 -translate-x-1/2 z-20 inline-flex items-center justify-center gap-0.5 px-1.5 py-0.5 rounded-full bg-black/75 hover:bg-indigo-600 active:scale-95 text-white backdrop-blur-md border border-white/40 shadow-md text-[8px] sm:text-[9px] font-black cursor-pointer transition-all hover:scale-105 select-none"
                   >
-                    <span className="text-xs group-hover/movie:rotate-12 transition-transform">🎬</span>
-                    <span className="font-extrabold tracking-tight text-[8px] sm:text-[9px]">MOVIE</span>
+                    <span>🎬</span>
+                    <span className="font-extrabold tracking-tight">MOVIE</span>
                   </button>
                 )}
               </div>
@@ -169,15 +179,10 @@ export default function TrackList({
                     </Link>
                   </h3>
                   {song.synced_lyrics && (
-                    <button
-                      type="button"
-                      onClick={() => setLyrimoModalSong({ ...song, artist: artistName })}
-                      title="🎬 タップしてリリモ小窓を開く（文字PV・リリック）"
-                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white shrink-0 shadow-2xs tracking-wider cursor-pointer active:scale-95 transition-all"
-                    >
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black bg-gradient-to-r from-indigo-600 to-pink-600 text-white shrink-0 shadow-2xs tracking-wider">
                       <span>🎬</span>
                       <span>Lyrimo対応</span>
-                    </button>
+                    </span>
                   )}
                 </div>
                 {artists.length > 0 ? (
