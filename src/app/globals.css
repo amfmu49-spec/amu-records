@@ -34,3 +34,19 @@ button, a, [role="button"] {
   animation: bell-wiggle 1.5s ease-in-out infinite;
 }
 
+@keyframes ticker-slide {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-ticker {
+  display: flex;
+  width: max-content;
+  animation: ticker-slide 35s linear infinite;
+  will-change: transform;
+}
+
