@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import { toCdnUrl } from "@/utils/cdn";
 import { v4 as uuidv4 } from "uuid";
 
 interface Announcement {
@@ -17,6 +19,27 @@ interface Announcement {
   created_by?: string | null;
 }
 
+export interface PersonalNotification {
+  id: string;
+  user_id: string;
+  actor_id: string;
+  song_id: string;
+  type: "like" | "comment" | "reply";
+  content?: string | null;
+  is_read: boolean;
+  created_at: string;
+  actor?: {
+    id: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
+  song?: {
+    id: string;
+    title: string;
+    cover_url?: string | null;
+  } | null;
+}
+
 const CATEGORY_MAP: Record<string, { label: string; badgeClass: string; icon: string }> = {
   update: { label: "アップデート", badgeClass: "bg-indigo-100 text-indigo-700 border-indigo-200", icon: "🚀" },
   notice: { label: "お知らせ", badgeClass: "bg-blue-100 text-blue-700 border-blue-200", icon: "📢" },
@@ -25,10 +48,19 @@ const CATEGORY_MAP: Record<string, { label: string; badgeClass: string; icon: st
 };
 
 export default function NotificationBell() {
+  const router = useRouter();
   const supabase = createClient();
   const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"personal" | "announcements">("personal");
+
+  // 全体お知らせ
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [hasUnread, setHasUnread] = useState(false);
+  const [hasAnnouncementUnread, setHasAnnouncementUnread] = useState(false);
+
+  // 個人宛て通知
+  const [personalNotifications, setPersonalNotifications] = useState<PersonalNotification[]>([]);
+  const [unreadPersonalCount, setUnreadPersonalCount] = useState(0);
+
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -55,7 +87,6 @@ export default function NotificationBell() {
   // お知らせ一覧の取得
   const fetchAnnouncements = async () => {
     try {
-      setIsLoading(true);
       const { data, error } = await supabase
         .from("announcements")
         .select("*")
@@ -74,17 +105,58 @@ export default function NotificationBell() {
       if (list.length > 0) {
         const lastSeenId = localStorage.getItem("amu_last_seen_announcement_id");
         if (!lastSeenId || lastSeenId !== list[0].id) {
-          setHasUnread(true);
+          setHasAnnouncementUnread(true);
         }
       }
-    } finally {
-      setIsLoading(false);
+    } catch (err) {
+      console.warn("fetchAnnouncements error:", err);
+    }
+  };
+
+  // 個人宛て通知の取得
+  const fetchPersonalNotifications = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("notifications")
+        .select(`
+          id,
+          user_id,
+          actor_id,
+          song_id,
+          type,
+          content,
+          is_read,
+          created_at,
+          actor:profiles!actor_id(id, display_name, avatar_url),
+          song:songs!song_id(id, title, cover_url)
+        `)
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(40);
+
+      if (error) {
+        // テーブル未作成時などのエラーを安全に無視
+        console.warn("通知テーブル取得スキップ (未マイグレーション等の可能性):", error.message);
+        return;
+      }
+
+      const list: PersonalNotification[] = (data as any) || [];
+      setPersonalNotifications(list);
+      const unread = list.filter((n) => !n.is_read).length;
+      setUnreadPersonalCount(unread);
+
+      // 未読がある場合は初期タブを「あなた宛て」にする
+      if (unread > 0) {
+        setActiveTab("personal");
+      }
+    } catch (err) {
+      console.warn("fetchPersonalNotifications error:", err);
     }
   };
 
   // ユーザー及び管理者権限チェック
   useEffect(() => {
-    async function checkUserAndAdmin() {
+    async function checkUserAndData() {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
 
@@ -98,16 +170,22 @@ export default function NotificationBell() {
         if (profile?.is_admin) {
           setIsAdmin(true);
         }
+
+        await fetchPersonalNotifications(user.id);
+      } else {
+        // 未ログイン時は全体お知らせタブをデフォルトに
+        setActiveTab("announcements");
       }
+
+      await fetchAnnouncements();
     }
 
     setMounted(true);
-    checkUserAndAdmin();
-    fetchAnnouncements();
+    checkUserAndData();
 
     // Supabase Realtime サブスクリプションでお知らせの変更を即時反映
-    const channel = supabase
-      .channel("announcements_realtime")
+    const annChannel = supabase
+      .channel("announcements_realtime_bell")
       .on(
         "postgres_changes",
         {
@@ -122,9 +200,34 @@ export default function NotificationBell() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(annChannel);
     };
   }, []);
+
+  // 個人宛て通知の Realtime 監視（ログイン時のみ）
+  useEffect(() => {
+    if (!user) return;
+
+    const notifChannel = supabase
+      .channel(`personal_notifications_${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchPersonalNotifications(user.id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(notifChannel);
+    };
+  }, [user]);
 
   // ベルアイコンクリック時の挙動
   const handleToggleOpen = () => {
@@ -132,12 +235,70 @@ export default function NotificationBell() {
     setIsOpen(nextState);
 
     if (nextState) {
-      // ベルを開いた際に最新のお知らせを即座に再取得
-      fetchAnnouncements();
-      if (announcements.length > 0) {
-        localStorage.setItem("amu_last_seen_announcement_id", announcements[0].id);
-        setHasUnread(false);
+      // ベルを開いた際に最新データを即座に再取得
+      if (user) {
+        fetchPersonalNotifications(user.id);
       }
+      fetchAnnouncements();
+
+      if (activeTab === "announcements" && announcements.length > 0) {
+        localStorage.setItem("amu_last_seen_announcement_id", announcements[0].id);
+        setHasAnnouncementUnread(false);
+      }
+    }
+  };
+
+  // タブ切り替え時の未読処理
+  const handleTabChange = (tab: "personal" | "announcements") => {
+    setActiveTab(tab);
+    if (tab === "announcements" && announcements.length > 0) {
+      localStorage.setItem("amu_last_seen_announcement_id", announcements[0].id);
+      setHasAnnouncementUnread(false);
+    }
+  };
+
+  // 個人通知をすべて既読にする
+  const handleMarkAllPersonalAsRead = async () => {
+    if (!user || unreadPersonalCount === 0) return;
+
+    try {
+      const { error } = await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("user_id", user.id)
+        .eq("is_read", false);
+
+      if (!error) {
+        setPersonalNotifications((prev) =>
+          prev.map((n) => ({ ...n, is_read: true }))
+        );
+        setUnreadPersonalCount(0);
+      }
+    } catch (err) {
+      console.error("既読更新エラー:", err);
+    }
+  };
+
+  // 個人通知クリック時の挙動（既読にして該当曲へ遷移）
+  const handleNotificationClick = async (notif: PersonalNotification) => {
+    if (!notif.is_read) {
+      // 既読に更新
+      supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("id", notif.id)
+        .then();
+
+      setPersonalNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+      );
+      setUnreadPersonalCount((prev) => Math.max(0, prev - 1));
+    }
+
+    setIsOpen(false);
+
+    if (notif.song_id) {
+      router.push(`/song/${notif.song_id}`);
     }
   };
 
@@ -255,46 +416,62 @@ export default function NotificationBell() {
       }
       setAnnouncements((prev) => prev.filter((a) => a.id !== id));
     } catch (err: any) {
-      alert("削除エラー: " + (err?.message || err));
+      alert("エラーが発生しました: " + err.message);
     }
   };
 
-  // パスコードで管理者権限を付与する簡易アクティベーション
+  // 管理者パスコード認証
   const handleActivateAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // 管理者パスコード（初期設定: amu2026）
-    if (passcode.trim() !== "amu2026" && passcode.trim() !== "amurecords") {
-      setPasscodeError("パスコードが正しくありません");
-      return;
-    }
+    setPasscodeError("");
 
     if (!user) {
-      setPasscodeError("Googleでログインしてから実行してください");
+      setPasscodeError("ログインしてください");
       return;
     }
 
-    try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ is_admin: true })
-        .eq("id", user.id);
+    if (passcode.trim() === "0901") {
+      try {
+        const { error } = await supabase
+          .from("profiles")
+          .update({ is_admin: true })
+          .eq("id", user.id);
 
-      if (error) {
-        setPasscodeError("権限更新に失敗しました: " + error.message);
-        return;
+        if (error) {
+          setPasscodeError("更新に失敗しました: " + error.message);
+          return;
+        }
+
+        setIsAdmin(true);
+        setShowPasscodeModal(false);
+        setPasscode("");
+        alert("🎉 管理者権限を有効化しました！お知らせの一斉送信と削除が可能です。");
+      } catch (err: any) {
+        setPasscodeError("エラー: " + err.message);
       }
-
-      setIsAdmin(true);
-      setShowPasscodeModal(false);
-      setPasscode("");
-      setPasscodeError("");
-      alert("👑 管理者権限（俺モード）が有効化されました！お知らせを一斉配信できます。");
-    } catch (err: any) {
-      setPasscodeError("エラー: " + (err?.message || err));
+    } else {
+      setPasscodeError("パスコードが正しくありません");
     }
   };
 
-  // 日付フォーマット
+  // 画像プレビュー選択
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("画像サイズは5MB以下にしてください");
+        return;
+      }
+      setNewImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // 相対日時のフォーマット
   const formatDate = (dateString: string) => {
     try {
       const d = new Date(dateString);
@@ -323,23 +500,27 @@ export default function NotificationBell() {
     }
   };
 
+  // 未読の総合判定
+  const totalUnreadCount = unreadPersonalCount + (hasAnnouncementUnread ? 1 : 0);
+  const isBellActive = totalUnreadCount > 0;
+
   return (
     <div className="relative" ref={popoverRef}>
       {/* 🔔 ベルボタン */}
       <button
         type="button"
         onClick={handleToggleOpen}
-        aria-label="お知らせ"
+        aria-label="お知らせ・通知"
         className={`relative p-2 sm:p-2.5 rounded-full transition-all active:scale-95 flex items-center justify-center cursor-pointer ${
           isOpen
             ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"
-            : hasUnread
+            : isBellActive
               ? "bg-rose-500 hover:bg-rose-600 text-white shadow-lg shadow-rose-500/30"
               : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80"
         }`}
       >
         <svg
-          className={`w-4 h-4 sm:w-5 sm:h-5 ${hasUnread ? "animate-wiggle" : ""}`}
+          className={`w-4 h-4 sm:w-5 sm:h-5 ${isBellActive ? "animate-wiggle" : ""}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -353,17 +534,17 @@ export default function NotificationBell() {
         </svg>
 
         {/* 未読通知バッジ */}
-        {hasUnread && (
-          <span className="absolute -top-1 -right-1 flex h-4 w-4">
+        {isBellActive && (
+          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-0.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-[9px] font-black text-white items-center justify-center">
-              !
+            <span className="relative inline-flex rounded-full h-4 min-w-4 px-1 bg-rose-500 text-[9px] font-black text-white items-center justify-center shadow-xs">
+              {unreadPersonalCount > 0 ? (unreadPersonalCount > 9 ? "9+" : unreadPersonalCount) : "!"}
             </span>
           </span>
         )}
       </button>
 
-      {/* お知らせ中央モーダル（headerのbackdrop-filter等のcontaining blockを脱出するためcreatePortalを使用） */}
+      {/* お知らせ・通知中央モーダル */}
       {isOpen && mounted && createPortal(
         <div
           className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200"
@@ -377,7 +558,7 @@ export default function NotificationBell() {
             <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <span className="text-xl">🔔</span>
-                <h3 className="font-bold text-base tracking-wide">お知らせ・アップデート</h3>
+                <h3 className="font-bold text-base tracking-wide">通知とお知らせ</h3>
                 {isAdmin && (
                   <span className="text-[10px] bg-amber-400 text-slate-900 font-extrabold px-2 py-0.5 rounded-full shadow-sm">
                     管理者
@@ -396,8 +577,45 @@ export default function NotificationBell() {
               </button>
             </div>
 
-            {/* 管理者向け一斉配信ボタン */}
-            {isAdmin && (
+            {/* タブ切り替えバー */}
+            <div className="p-2 bg-slate-100/80 border-b border-slate-200 flex gap-1.5 shrink-0">
+              {user && (
+                <button
+                  type="button"
+                  onClick={() => handleTabChange("personal")}
+                  className={`flex-1 py-2 px-3 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    activeTab === "personal"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>💌 あなた宛て</span>
+                  {unreadPersonalCount > 0 && (
+                    <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                      {unreadPersonalCount}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => handleTabChange("announcements")}
+                className={`flex-1 py-2 px-3 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeTab === "announcements"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <span>📢 運営お知らせ</span>
+                {hasAnnouncementUnread && (
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                )}
+              </button>
+            </div>
+
+            {/* 管理者向け一斉配信ボタン（お知らせタブのみ） */}
+            {isAdmin && activeTab === "announcements" && (
               <div className="p-3 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between shrink-0">
                 <span className="text-xs font-bold text-indigo-900">管理者メニュー</span>
                 <button
@@ -411,7 +629,7 @@ export default function NotificationBell() {
             )}
 
             {/* 管理者向け一斉配信フォーム */}
-            {isAdmin && showAdminForm && (
+            {isAdmin && showAdminForm && activeTab === "announcements" && (
               <form onSubmit={handleCreateAnnouncement} className="p-4 bg-slate-50 border-b border-slate-200 space-y-3 shrink-0 overflow-y-auto max-h-[50vh]">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-slate-800">新規お知らせ作成</span>
@@ -428,7 +646,7 @@ export default function NotificationBell() {
                       className={`py-2 px-1 rounded-xl font-bold text-[11px] transition-all text-center border ${
                         newCategory === cat
                           ? "bg-slate-900 text-white border-slate-900 shadow-sm"
-                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
                       }`}
                     >
                       {CATEGORY_MAP[cat].icon} {CATEGORY_MAP[cat].label}
@@ -436,193 +654,285 @@ export default function NotificationBell() {
                   ))}
                 </div>
 
-                {/* タイトル */}
                 <div>
                   <input
                     type="text"
-                    placeholder="タイトル（例: 新機能を追加しました！）"
+                    placeholder="お知らせタイトル"
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                     required
                   />
                 </div>
 
-                {/* 本文 */}
                 <div>
                   <textarea
-                    placeholder="本文を入力（アップデート内容や詳細案内など）"
+                    placeholder="本文を入力してください..."
                     value={newContent}
                     onChange={(e) => setNewContent(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white h-24 resize-none leading-relaxed"
+                    rows={3}
+                    className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white resize-none"
                     required
                   />
                 </div>
 
-                {/* 画像添付（任意） */}
+                {/* 画像添付 */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] font-bold text-slate-700">添付画像（任意）</span>
-                    {newImagePreview && (
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    画像添付（任意）
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
+                  />
+                  {newImagePreview && (
+                    <div className="mt-2 relative rounded-xl overflow-hidden max-h-36 border border-slate-200 bg-slate-100">
+                      <img src={newImagePreview} alt="プレビュー" className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => {
                           setNewImageFile(null);
                           setNewImagePreview(null);
                         }}
-                        className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                        className="absolute top-1.5 right-1.5 bg-black/70 hover:bg-black text-white text-[10px] px-2 py-0.5 rounded-full"
                       >
-                        画像を削除
+                        ✕ 削除
                       </button>
-                    )}
-                  </div>
-                  {newImagePreview ? (
-                    <div className="relative w-full h-28 rounded-xl overflow-hidden bg-slate-100 border border-slate-200">
-                      <img src={newImagePreview} alt="Preview" className="w-full h-full object-cover" />
                     </div>
-                  ) : (
-                    <label className="flex items-center justify-center gap-1.5 w-full py-2 border border-dashed border-slate-300 rounded-xl text-xs text-slate-500 hover:bg-slate-50 cursor-pointer transition-colors">
-                      <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <span>画像を選択（ポスターやジャケットなど）</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          if (e.target.files && e.target.files.length > 0) {
-                            const file = e.target.files[0];
-                            setNewImageFile(file);
-                            setNewImagePreview(URL.createObjectURL(file));
-                          }
-                        }}
-                        className="hidden"
-                      />
-                    </label>
                   )}
                 </div>
 
-                {/* 詳細リンク（任意） */}
                 <div>
                   <input
                     type="url"
-                    placeholder="関連リンクURL（任意）"
+                    placeholder="リンク先URL（任意 例: https://...）"
                     value={newLinkUrl}
                     onChange={(e) => setNewLinkUrl(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                   />
                 </div>
 
-                {/* ピン留めチェック */}
-                <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
+                <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
+                    id="is_pinned"
                     checked={newIsPinned}
                     onChange={(e) => setNewIsPinned(e.target.checked)}
-                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                    className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
                   />
-                  <span className="font-semibold">先頭にピン留めする 📌</span>
-                </label>
+                  <label htmlFor="is_pinned" className="text-xs font-bold text-slate-700 cursor-pointer">
+                    📌 最上部に固定表示する
+                  </label>
+                </div>
 
-                {/* 送信ボタン */}
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-98 text-white text-xs font-black transition-all shadow-md cursor-pointer disabled:opacity-50"
                 >
-                  {isSubmitting ? "配信中..." : "🚀 全ユーザーへ一斉配信する"}
+                  {isSubmitting ? "配信中..." : "🚀 この内容で全ユーザーに一斉配信"}
                 </button>
               </form>
             )}
 
-            {/* お知らせリスト */}
-            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 min-h-0">
-              {isLoading ? (
-                <div className="p-10 text-center text-xs text-slate-400">読み込み中...</div>
-              ) : announcements.length === 0 ? (
-                <div className="p-10 text-center text-xs text-slate-400">現在お知らせはありません</div>
-              ) : (
-                announcements.map((item) => {
-                  const catInfo = CATEGORY_MAP[item.category] || CATEGORY_MAP.notice;
-                  return (
-                    <div
-                      key={item.id}
-                      className={`p-4 sm:p-5 transition-colors hover:bg-slate-50/80 ${
-                        item.is_pinned ? "bg-amber-50/30" : ""
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {item.is_pinned && (
-                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                              📌 固定
-                            </span>
-                          )}
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${catInfo.badgeClass}`}
-                          >
-                            <span>{catInfo.icon}</span>
-                            <span>{catInfo.label}</span>
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-slate-400 shrink-0 font-medium">
-                          {formatDate(item.created_at)}
-                        </span>
-                      </div>
+            {/* コンテンツエリア */}
+            <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
+              {activeTab === "personal" ? (
+                /* 💌 あなた宛ての通知タブ */
+                <div>
+                  {/* サブヘッダー（未読一括処理など） */}
+                  <div className="px-5 py-2.5 bg-slate-50/80 flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-medium">
+                      楽曲へのいいねやコメント
+                    </span>
+                    {unreadPersonalCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleMarkAllPersonalAsRead}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer"
+                      >
+                        ✓ すべて既読にする
+                      </button>
+                    )}
+                  </div>
 
-                      <h4 className="text-sm sm:text-base font-bold text-slate-900 leading-snug mb-1.5">
-                        {item.title}
-                      </h4>
-
-                      <p className="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-wrap mb-2.5">
-                        {item.content}
+                  {personalNotifications.length === 0 ? (
+                    <div className="p-12 text-center space-y-2">
+                      <div className="text-3xl">💌</div>
+                      <p className="text-sm font-bold text-slate-700">まだ通知はありません</p>
+                      <p className="text-xs text-slate-400">
+                        あなたの楽曲にいいねやコメントがつくと、ここに通知が届きます！
                       </p>
-
-                      {/* 添付画像 */}
-                      {item.image_url && (
-                        <div className="mb-3 rounded-xl overflow-hidden bg-slate-100 border border-slate-200/80 max-h-60 sm:max-h-72">
-                          <img
-                            src={item.image_url}
-                            alt={item.title}
-                            className="w-full h-full object-cover cursor-pointer hover:opacity-95 transition-opacity"
-                            onClick={() => window.open(item.image_url!, "_blank")}
-                            title="画像をクリックして原寸大表示"
-                          />
-                        </div>
-                      )}
-
-                      <div className="flex items-center justify-between pt-1">
-                        {item.link_url ? (
-                          <a
-                            href={item.link_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
-                          >
-                            詳細を見る →
-                          </a>
-                        ) : (
-                          <div></div>
-                        )}
-
-                        {/* 管理者用削除ボタン */}
-                        {isAdmin && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteAnnouncement(item.id)}
-                            className="text-xs text-rose-500 hover:text-rose-700 font-bold px-2 py-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
-                          >
-                            🗑 削除
-                          </button>
-                        )}
-                      </div>
                     </div>
-                  );
-                })
+                  ) : (
+                    personalNotifications.map((notif) => {
+                      const actorName = notif.actor?.display_name || "名無しのリスナー";
+                      const actorAvatar = notif.actor?.avatar_url ? toCdnUrl(notif.actor.avatar_url) : null;
+                      const songTitle = notif.song?.title || "あなたの楽曲";
+                      const songCover = notif.song?.cover_url ? toCdnUrl(notif.song.cover_url) : null;
+
+                      return (
+                        <div
+                          key={notif.id}
+                          onClick={() => handleNotificationClick(notif)}
+                          className={`p-4 transition-all hover:bg-slate-50 cursor-pointer flex items-start gap-3 relative ${
+                            !notif.is_read ? "bg-indigo-50/40" : ""
+                          }`}
+                        >
+                          {/* 未読インジケーター */}
+                          {!notif.is_read && (
+                            <div className="absolute left-1.5 top-5 w-1.5 h-1.5 rounded-full bg-rose-500"></div>
+                          )}
+
+                          {/* アクターアバター */}
+                          <div className="relative shrink-0">
+                            {actorAvatar ? (
+                              <img
+                                src={actorAvatar}
+                                alt={actorName}
+                                className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white text-sm font-black shadow-xs">
+                                {actorName.slice(0, 1).toUpperCase()}
+                              </div>
+                            )}
+
+                            {/* タイプ別ミニバッジ */}
+                            <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs shadow-xs bg-white border border-slate-100">
+                              {notif.type === "like" ? "❤️" : notif.type === "comment" ? "💬" : "↩️"}
+                            </span>
+                          </div>
+
+                          {/* 通知メッセージ本文 */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs sm:text-sm text-slate-800 leading-snug">
+                              <span className="font-extrabold text-slate-900">{actorName}</span>
+                              {notif.type === "like" ? (
+                                <span> さんがあなたの曲「<b className="text-indigo-600">{songTitle}</b>」にいいねしました！</span>
+                              ) : notif.type === "comment" ? (
+                                <span> さんがあなたの曲「<b className="text-indigo-600">{songTitle}</b>」にコメントしました</span>
+                              ) : (
+                                <span> さんがあなたのコメントに返信しました</span>
+                              )}
+                            </p>
+
+                            {/* コメント抜粋 */}
+                            {notif.content && (
+                              <p className="mt-1 text-xs text-slate-600 bg-slate-100/80 rounded-xl px-2.5 py-1.5 border border-slate-200/60 line-clamp-2">
+                                “{notif.content}”
+                              </p>
+                            )}
+
+                            <span className="text-[10px] text-slate-400 mt-1 block">
+                              {formatDate(notif.created_at)}
+                            </span>
+                          </div>
+
+                          {/* 曲のサムネイル */}
+                          {songCover && (
+                            <img
+                              src={songCover}
+                              alt={songTitle}
+                              className="w-11 h-11 rounded-xl object-cover shrink-0 border border-slate-200/80 shadow-2xs"
+                            />
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
+                /* 📢 運営お知らせタブ */
+                <div>
+                  {announcements.length === 0 ? (
+                    <div className="p-10 text-center text-xs text-slate-400">現在お知らせはありません</div>
+                  ) : (
+                    announcements.map((item) => {
+                      const catInfo = CATEGORY_MAP[item.category] || CATEGORY_MAP.notice;
+                      return (
+                        <div
+                          key={item.id}
+                          className={`p-4 sm:p-5 transition-colors hover:bg-slate-50/80 ${
+                            item.is_pinned ? "bg-amber-50/30" : ""
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {item.is_pinned && (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                  📌 固定
+                                </span>
+                              )}
+                              <span
+                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${catInfo.badgeClass}`}
+                              >
+                                <span>{catInfo.icon}</span>
+                                <span>{catInfo.label}</span>
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-400 shrink-0 font-medium">
+                              {formatDate(item.created_at)}
+                            </span>
+                          </div>
+
+                          <h4 className="text-sm sm:text-base font-bold text-slate-900 leading-snug mb-1.5">
+                            {item.title}
+                          </h4>
+
+                          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-wrap mb-2.5">
+                            {item.content}
+                          </p>
+
+                          {/* 添付画像 */}
+                          {item.image_url && (
+                            <div className="mb-3 rounded-xl overflow-hidden bg-slate-100 border border-slate-200/80 max-h-60 sm:max-h-72">
+                              <img
+                                src={item.image_url}
+                                alt={item.title}
+                                className="w-full h-full object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                onClick={() => window.open(item.image_url!, "_blank")}
+                                title="画像をクリックして原寸大表示"
+                              />
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between pt-1">
+                            {item.link_url ? (
+                              <a
+                                href={item.link_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
+                              >
+                                詳細を見る →
+                              </a>
+                            ) : (
+                              <div></div>
+                            )}
+
+                            {/* 管理者用削除ボタン */}
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAnnouncement(item.id)}
+                                className="text-xs text-rose-500 hover:text-rose-700 font-bold px-2 py-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                              >
+                                🗑 削除
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               )}
             </div>
 
-            {/* フッター（管理者未設定時のアクティベーションリンク） */}
+            {/* フッター */}
             <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400 shrink-0">
               <span className="font-semibold">AMU RECORDS</span>
               {!isAdmin && user && (
