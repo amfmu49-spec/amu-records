@@ -7,6 +7,8 @@ import { v4 as uuidv4 } from "uuid";
 import Link from "next/link";
 import UploadForm from "@/components/UploadForm";
 import UserRoleBadge from "@/components/UserRoleBadge";
+import SupporterBadge from "@/components/SupporterBadge";
+import { calculateSupporterRank, SupporterRankInfo, SUPPORTER_RANKS } from "@/utils/supporterRank";
 
 export default function ProfilePage() {
   const [user, setUser] = useState<any>(null);
@@ -34,6 +36,11 @@ export default function ProfilePage() {
   const [hasProfile, setHasProfile] = useState(false);
   const [availableArtists, setAvailableArtists] = useState<any[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  // サポーターランク関連state
+  const [supporterInfo, setSupporterInfo] = useState<SupporterRankInfo | null>(null);
+  const [myLikedSongs, setMyLikedSongs] = useState<any[]>([]);
+  const [showRankGuideModal, setShowRankGuideModal] = useState(false);
   
   // 管理者お知らせ送信state
   const [adminTitle, setAdminTitle] = useState("");
@@ -128,6 +135,18 @@ export default function ProfilePage() {
 
       if (playlistsData) {
         setMyPlaylists(playlistsData);
+      }
+
+      // いいね履歴の取得とサポーターランク計算
+      const { data: likesData } = await supabase
+        .from("likes")
+        .select("id, song_id, created_at, songs:songs(id, title, artist, cover_url)")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (likesData) {
+        setMyLikedSongs(likesData);
+        setSupporterInfo(calculateSupporterRank(likesData));
       }
     }
     loadProfile();
@@ -533,10 +552,311 @@ export default function ProfilePage() {
           ホームへ戻る
         </Link>
 
+        {/* ＝＝＝ 🌟 サポーターランク ステータスカード ＝＝＝ */}
+        {supporterInfo && (
+          <div className="mb-8 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-[2rem] p-6 sm:p-8 text-white shadow-xl border border-indigo-500/20 relative overflow-hidden">
+            {/* 背景のグローエフェクト */}
+            <div className="absolute -right-16 -top-16 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -left-16 -bottom-16 w-64 h-64 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none" />
+
+            {/* ヘッダー */}
+            <div className="flex items-center justify-between flex-wrap gap-3 mb-6 relative z-10">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-3 w-3 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
+                </span>
+                <h2 className="text-sm sm:text-base font-black tracking-wider uppercase text-indigo-200">
+                  サポーターシステム
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRankGuideModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-indigo-200 hover:text-white text-xs font-bold transition-all border border-white/15 cursor-pointer backdrop-blur-md"
+              >
+                <span>ℹ️</span>
+                <span>ランクの仕組み</span>
+              </button>
+            </div>
+
+            {/* ランクとハート色のメイン表示 */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md mb-6 relative z-10">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-3xl shadow-inner shrink-0">
+                  {supporterInfo.icon}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                      {supporterInfo.nameJa}
+                    </span>
+                    {supporterInfo.rank !== "none" && (
+                      <SupporterBadge rank={supporterInfo.rank} size="sm" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-300">
+                    <span>あなたのハート色:</span>
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[11px] bg-black/40 border border-white/15"
+                      style={{ color: supporterInfo.heartHex }}
+                    >
+                      <span>❤️</span>
+                      <span>
+                        {supporterInfo.rank === "platinum"
+                          ? "プラチナサイバー"
+                          : supporterInfo.rank === "gold"
+                          ? "黄金ゴールド"
+                          : supporterInfo.rank === "silver"
+                          ? "クールシルバー"
+                          : supporterInfo.rank === "bronze"
+                          ? "ブロンズメタリック"
+                          : "通常レッド"}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 統計数値 */}
+              <div className="flex items-center gap-4 border-t sm:border-t-0 sm:border-l border-white/10 pt-3 sm:pt-0 sm:pl-5">
+                <div className="text-center sm:text-right">
+                  <span className="block text-[10px] font-bold text-slate-400 tracking-wider">
+                    累計いいね
+                  </span>
+                  <span className="text-lg sm:text-2xl font-black text-white">
+                    {supporterInfo.totalLikes}
+                    <span className="text-xs font-normal text-slate-400 ml-0.5">回</span>
+                  </span>
+                </div>
+                <div className="text-center sm:text-right">
+                  <span className="block text-[10px] font-bold text-slate-400 tracking-wider">
+                    当月いいね
+                  </span>
+                  <span className="text-lg sm:text-2xl font-black text-indigo-300">
+                    {supporterInfo.monthlyLikes}
+                    <span className="text-xs font-normal text-slate-400 ml-0.5">回</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* ランクアップ進捗バー（次のランクがある場合） */}
+            {supporterInfo.nextRank && supporterInfo.nextRankThreshold && (
+              <div className="mb-6 relative z-10 bg-white/5 p-4 rounded-2xl border border-white/10">
+                <div className="flex items-center justify-between text-xs mb-2">
+                  <span className="font-bold text-slate-300 flex items-center gap-1">
+                    <span>🚀 次の目標:</span>
+                    <span className="text-white font-black">{supporterInfo.nextRankNameJa}</span>
+                  </span>
+                  <span className="font-extrabold text-amber-300">
+                    あと {supporterInfo.likesToNextRank} いいね！
+                  </span>
+                </div>
+                {/* プログレスバー */}
+                <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden p-0.5 border border-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-amber-400 to-amber-300 transition-all duration-700 shadow-sm"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        Math.max(
+                          6,
+                          Math.round((supporterInfo.totalLikes / supporterInfo.nextRankThreshold) * 100)
+                        )
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1.5 font-mono">
+                  <span>現在: {supporterInfo.totalLikes} いいね</span>
+                  <span>目標: {supporterInfo.nextRankThreshold} いいね</span>
+                </div>
+              </div>
+            )}
+
+            {/* プラチナ達成済みメッセージ */}
+            {supporterInfo.rank === "platinum" && (
+              <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 border border-cyan-400/40 text-center relative z-10">
+                <p className="text-sm font-black text-cyan-200">
+                  🎉 最高峰のプラチナサポーター達成中！
+                </p>
+                <p className="text-xs text-cyan-300/80 mt-0.5">
+                  AMU RECORDSを熱狂的に応援していただき本当にありがとうございます！
+                </p>
+              </div>
+            )}
+
+            {/* 翌月ランク継続ステータス */}
+            {supporterInfo.maintainCondition > 0 && (
+              <div className="relative z-10 p-4 rounded-2xl bg-white/5 border border-white/10">
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-1.5">
+                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <span>📅</span>
+                    <span>翌月のランク継続条件</span>
+                    <span className="text-[11px] text-slate-400 font-normal">
+                      (今月 {supporterInfo.maintainCondition} いいね以上)
+                    </span>
+                  </span>
+                  {supporterInfo.isMaintained ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 flex items-center gap-1 shadow-xs">
+                      <span>✅</span>
+                      <span>来月も維持確定</span>
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 border border-amber-400/40 text-amber-200 flex items-center gap-1">
+                      <span>⚠️</span>
+                      <span>あと {supporterInfo.likesToMaintain} いいね必要</span>
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-300/90 leading-relaxed">
+                  {supporterInfo.isMaintained ? (
+                    <span>
+                      素晴らしい応援実績です！当月のいいね数が条件（{supporterInfo.monthlyLikes} / {supporterInfo.maintainCondition}回）を満たしているため、来月も現在のランクが継続されます。
+                    </span>
+                  ) : (
+                    <span>
+                      現在当月 <b className="text-white">{supporterInfo.monthlyLikes}</b> / 必要 <b className="text-white">{supporterInfo.maintainCondition}</b> 回です。今月末までにあと <b className="text-amber-300 font-bold">{supporterInfo.likesToMaintain}回</b> いいねすると、来月もランクを維持できます（未達成の場合はランクダウンとなります）。
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ランク仕組み説明モーダル */}
+        {showRankGuideModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200"
+            onClick={() => setShowRankGuideModal(false)}
+          >
+            <div
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <span>🌟</span>
+                  <span>サポーターランクの仕組み</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowRankGuideModal(false)}
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-sm cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+                楽曲への「いいね」を重ねることでサポーターランクが上昇し、いいねのハート色や専用バッジが進化します！
+              </p>
+
+              {/* ランク条件一覧テーブル */}
+              <div className="space-y-3 mb-6">
+                {/* プラチナ */}
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-cyan-50 to-indigo-50 border border-cyan-300/80 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">💎</span>
+                    <div>
+                      <h4 className="font-black text-slate-900 text-sm">プラチナサポーター</h4>
+                      <p className="text-[11px] text-cyan-700 font-medium">
+                        ハート色: プラチナサイバー
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs">
+                    <span className="font-extrabold text-slate-900 block">50 いいね〜</span>
+                    <span className="text-[10px] text-slate-500">翌月継続: 25いいね/月</span>
+                  </div>
+                </div>
+
+                {/* ゴールド */}
+                <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-300 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🥇</span>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">ゴールドサポーター</h4>
+                      <p className="text-[11px] text-amber-700 font-medium">
+                        ハート色: 黄金ゴールド
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs">
+                    <span className="font-extrabold text-slate-900 block">30 いいね〜</span>
+                    <span className="text-[10px] text-slate-500">翌月継続: 15いいね/月</span>
+                  </div>
+                </div>
+
+                {/* シルバー */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-300 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🥈</span>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">シルバーサポーター</h4>
+                      <p className="text-[11px] text-slate-600 font-medium">
+                        ハート色: クールシルバー
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs">
+                    <span className="font-extrabold text-slate-900 block">15 いいね〜</span>
+                    <span className="text-[10px] text-slate-500">翌月継続: 8いいね/月</span>
+                  </div>
+                </div>
+
+                {/* ブロンズ */}
+                <div className="p-3.5 rounded-2xl bg-amber-900/5 border border-amber-800/20 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🥉</span>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">ブロンズサポーター</h4>
+                      <p className="text-[11px] text-[#8a4a16] font-medium">
+                        ハート色: ブロンズ銅色
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs">
+                    <span className="font-extrabold text-slate-900 block">5 いいね〜</span>
+                    <span className="text-[10px] text-slate-500">翌月継続: 3いいね/月</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 text-xs text-slate-600 space-y-2">
+                <p className="font-bold text-slate-800">📌 ランクの継続とダウンについて</p>
+                <p className="leading-relaxed">
+                  翌月以降、その月の継続条件（ブロンズ3回、シルバー8回、ゴールド15回、プラチナ25回）を満たすとランクが継続されます。条件を下回った場合は、当月のいいね数に応じたランクにランクダウンします。
+                </p>
+                <p className="leading-relaxed">
+                  月途中でも昇格基準（5, 15, 30, 50）を満たせば、いつでも即座に上位ランクへ昇格します！
+                </p>
+              </div>
+
+              <div className="mt-6 text-center">
+                <button
+                  type="button"
+                  onClick={() => setShowRankGuideModal(false)}
+                  className="px-6 py-2.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer shadow-sm"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-[2rem] p-8 sm:p-12 shadow-sm border border-slate-200">
           <div className="flex items-center justify-between flex-wrap gap-3 mb-8">
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900">プロフィール設定</h1>
-            <UserRoleBadge role={role} size="sm" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <UserRoleBadge role={role} size="sm" />
+              {supporterInfo && supporterInfo.rank !== "none" && (
+                <SupporterBadge rank={supporterInfo.rank} size="sm" />
+              )}
+            </div>
           </div>
           
           <form onSubmit={handleSave} className="space-y-8">

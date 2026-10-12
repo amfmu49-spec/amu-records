@@ -7,11 +7,13 @@ import Link from "next/link";
 
 import { useState } from "react";
 import NotificationBell from "@/components/NotificationBell";
+import { useAudioPlayer } from "@/components/AudioPlayerProvider";
 
 export default function AuthButton({ user }: { user: User | null }) {
   const supabase = createClient();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const { supporterRankInfo } = useAudioPlayer();
 
   const handleLogin = async () => {
     try {
@@ -51,9 +53,14 @@ export default function AuthButton({ user }: { user: User | null }) {
         <NotificationBell />
         <Link 
           href="/profile" 
-          className="text-xs sm:text-sm font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 active:scale-95 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-full transition-all shrink-0 whitespace-nowrap shadow-2xs"
+          className="text-xs sm:text-sm font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 active:scale-95 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-full transition-all shrink-0 whitespace-nowrap shadow-2xs inline-flex items-center gap-1.5"
         >
-          マイページ
+          {supporterRankInfo && supporterRankInfo.rank !== "none" && (
+            <span className="text-xs sm:text-sm leading-none" title={supporterRankInfo.nameJa}>
+              {supporterRankInfo.icon}
+            </span>
+          )}
+          <span>マイページ</span>
         </Link>
         <button 
           type="button"

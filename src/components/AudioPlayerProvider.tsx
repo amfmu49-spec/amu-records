@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { getCachedAudioUrl, preloadAudioToCache } from "@/utils/audioCache";
 import { toCdnUrl } from "@/utils/cdn";
+import { calculateSupporterRank, SupporterRankInfo } from "@/utils/supporterRank";
 
 export type Song = {
   id: string;
@@ -22,6 +23,8 @@ type AudioPlayerContextType = {
   isCrossfading: boolean;
   currentTime: number;
   duration: number;
+  supporterRankInfo: SupporterRankInfo;
+  refreshSupporterRank: () => Promise<void>;
   playSong: (song: Song, playlist?: any[]) => void;
   seekTo: (seconds: number) => void;
   togglePlay: () => void;
@@ -40,6 +43,8 @@ const AudioPlayerContext = createContext<AudioPlayerContextType>({
   isCrossfading: false,
   currentTime: 0,
   duration: 0,
+  supporterRankInfo: calculateSupporterRank([]),
+  refreshSupporterRank: async () => {},
   playSong: () => {},
   seekTo: () => {},
   togglePlay: () => {},
@@ -132,10 +137,29 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     playlistRef.current = playlist;
   }, [playlist]);
 
-  // プレイヤー専用：ログインユーザー情報、現在の曲のいいね・コメント状態
+  // プレイヤー専用：ログインユーザー情報、現在の曲のいいね・コメント状態、サポーターランク情報
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [currentLikes, setCurrentLikes] = useState<{ isLiked: boolean; count: number }>({ isLiked: false, count: 0 });
   const [currentCommentsCount, setCurrentCommentsCount] = useState<number>(0);
+  const [supporterRankInfo, setSupporterRankInfo] = useState<SupporterRankInfo>(() => calculateSupporterRank([]));
+  const isLikingRef = useRef(false);
+
+  // ユーザーのサポーターランクを取得・再計算
+  const refreshSupporterRank = useCallback(async () => {
+    if (!currentUser?.id) return;
+    try {
+      const supabase = createClient();
+      const { data: userLikes } = await supabase
+        .from("likes")
+        .select("created_at")
+        .eq("user_id", currentUser.id);
+
+      const info = calculateSupporterRank(userLikes || []);
+      setSupporterRankInfo(info);
+    } catch (err) {
+      console.warn("Failed to refresh supporter rank:", err);
+    }
+  }, [currentUser?.id]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -143,6 +167,12 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       setCurrentUser(data.user);
     });
   }, []);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      refreshSupporterRank();
+    }
+  }, [currentUser?.id, refreshSupporterRank]);
 
   useEffect(() => {
     if (!currentSong?.id) return;
@@ -166,16 +196,27 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       return;
     }
     if (!currentSong) return;
+    if (isLikingRef.current) return; // 二重クリック・通信重複を完全防止！
 
-    const newIsLiked = !currentLikes.isLiked;
-    const newCount = newIsLiked ? currentLikes.count + 1 : Math.max(0, currentLikes.count - 1);
-    setCurrentLikes({ isLiked: newIsLiked, count: newCount });
+    try {
+      isLikingRef.current = true;
+      const newIsLiked = !currentLikes.isLiked;
+      const newCount = newIsLiked ? currentLikes.count + 1 : Math.max(0, currentLikes.count - 1);
+      setCurrentLikes({ isLiked: newIsLiked, count: newCount });
 
-    const supabase = createClient();
-    if (newIsLiked) {
-      await supabase.from("likes").insert({ user_id: currentUser.id, song_id: currentSong.id });
-    } else {
-      await supabase.from("likes").delete().eq("user_id", currentUser.id).eq("song_id", currentSong.id);
+      const supabase = createClient();
+      if (newIsLiked) {
+        await supabase.from("likes").insert({ user_id: currentUser.id, song_id: currentSong.id });
+      } else {
+        await supabase.from("likes").delete().eq("user_id", currentUser.id).eq("song_id", currentSong.id);
+      }
+
+      // サポーターランクをリアルタイム再計算＆反映
+      await refreshSupporterRank();
+    } catch (err) {
+      console.error("Like toggle error:", err);
+    } finally {
+      isLikingRef.current = false;
     }
   };
 
@@ -796,6 +837,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         isCrossfading,
         currentTime,
         duration,
+        supporterRankInfo,
+        refreshSupporterRank,
         playSong,
         seekTo,
         togglePlay,
@@ -905,18 +948,38 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
 
                   {/* いいね＆コメントアクションボタン群 */}
                   <div className="flex items-center gap-2 shrink-0">
-                    {/* いいねボタン */}
+                    {/* いいねボタン（サポーターランク色に対応） */}
                     <button
                       type="button"
                       onClick={toggleCurrentLike}
                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold transition-all active:scale-95 cursor-pointer border ${
                         currentLikes.isLiked
-                          ? "bg-rose-50 border-rose-200 text-rose-600"
+                          ? supporterRankInfo.rank === "platinum"
+                            ? "bg-cyan-50 border-cyan-300 text-cyan-600 shadow-2xs"
+                            : supporterRankInfo.rank === "gold"
+                            ? "bg-amber-50 border-amber-300 text-amber-600 shadow-2xs"
+                            : supporterRankInfo.rank === "silver"
+                            ? "bg-slate-100 border-slate-300 text-slate-600"
+                            : supporterRankInfo.rank === "bronze"
+                            ? "bg-amber-950/10 border-[#CD7F32]/50 text-[#8a4a16]"
+                            : "bg-rose-50 border-rose-200 text-rose-600"
                           : "bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800"
                       }`}
                       title={currentLikes.isLiked ? "いいねを取り消す" : "いいね！"}
                     >
-                      <svg className={`w-3.5 h-3.5 ${currentLikes.isLiked ? "fill-rose-500 text-rose-500" : "fill-none stroke-current"}`} viewBox="0 0 24 24">
+                      <svg
+                        className={`w-3.5 h-3.5 ${
+                          currentLikes.isLiked
+                            ? supporterRankInfo.heartColor
+                            : "fill-none stroke-current"
+                        }`}
+                        style={
+                          currentLikes.isLiked && supporterRankInfo.heartHex
+                            ? { color: supporterRankInfo.heartHex, fill: supporterRankInfo.heartHex }
+                            : undefined
+                        }
+                        viewBox="0 0 24 24"
+                      >
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                       </svg>
                       <span>{currentLikes.count}</span>

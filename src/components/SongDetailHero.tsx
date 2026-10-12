@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAudioPlayer } from "@/components/AudioPlayerProvider";
 import { createClient } from "@/utils/supabase/client";
 import { preloadAudioToCache } from "@/utils/audioCache";
@@ -60,20 +60,33 @@ export default function SongDetailHero({
     });
   };
 
+  const { supporterRankInfo, refreshSupporterRank } = useAudioPlayer();
+  const isProcessingLikeRef = useRef(false);
+
   const handleToggleLike = async () => {
     if (!currentUserId) {
       alert("いいねするにはGoogleでログインしてください");
       return;
     }
 
+    if (isProcessingLikeRef.current) return; // 二重クリック防止
+    isProcessingLikeRef.current = true;
+
     const nextLiked = !isLiked;
     setIsLiked(nextLiked);
     setLikeCount((prev) => (nextLiked ? prev + 1 : Math.max(0, prev - 1)));
 
-    if (nextLiked) {
-      await supabase.from("likes").insert([{ user_id: currentUserId, song_id: song.id }]);
-    } else {
-      await supabase.from("likes").delete().match({ user_id: currentUserId, song_id: song.id });
+    try {
+      if (nextLiked) {
+        await supabase.from("likes").insert([{ user_id: currentUserId, song_id: song.id }]);
+      } else {
+        await supabase.from("likes").delete().match({ user_id: currentUserId, song_id: song.id });
+      }
+      await refreshSupporterRank();
+    } catch (err) {
+      console.error("SongDetailHero like error:", err);
+    } finally {
+      isProcessingLikeRef.current = false;
     }
   };
 
@@ -270,17 +283,35 @@ export default function SongDetailHero({
               )}
             </button>
 
-            {/* いいねボタン */}
+            {/* いいねボタン（サポーターランク色に対応） */}
             <button
               type="button"
               onClick={handleToggleLike}
               className={`px-5 py-4 rounded-full font-bold text-sm flex items-center gap-2 border transition-all active:scale-95 select-none cursor-pointer ${
                 isLiked
-                  ? "bg-red-500/20 border-red-500/40 text-red-400"
+                  ? supporterRankInfo.rank === "platinum"
+                    ? "bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-md shadow-cyan-500/20"
+                    : supporterRankInfo.rank === "gold"
+                    ? "bg-amber-500/20 border-amber-400 text-amber-200 shadow-md shadow-amber-500/20"
+                    : supporterRankInfo.rank === "silver"
+                    ? "bg-slate-400/20 border-slate-300 text-slate-200"
+                    : supporterRankInfo.rank === "bronze"
+                    ? "bg-[#CD7F32]/25 border-[#CD7F32]/60 text-amber-200"
+                    : "bg-red-500/20 border-red-500/40 text-red-400"
                   : "bg-white/10 hover:bg-white/20 border-white/15 text-white"
               }`}
             >
-              <svg className={`w-5 h-5 ${isLiked ? "fill-current" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                className={`w-5 h-5 ${isLiked ? supporterRankInfo.heartColor : "fill-none stroke-current"}`}
+                style={
+                  isLiked && supporterRankInfo.heartHex
+                    ? { color: supporterRankInfo.heartHex, fill: supporterRankInfo.heartHex }
+                    : undefined
+                }
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
               </svg>
               <span>{isLiked ? "いいね済み" : "いいね"}</span>
