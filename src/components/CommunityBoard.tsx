@@ -19,6 +19,16 @@ interface BoardPost {
   } | null;
 }
 
+interface ParsedPost {
+  id: string;
+  user_id: string;
+  content: string;
+  rawContent: string;
+  parent_id: string | null;
+  created_at: string;
+  profiles?: BoardPost["profiles"];
+}
+
 function formatRelativeTime(dateString: string) {
   try {
     const date = new Date(dateString);
@@ -48,8 +58,14 @@ export default function CommunityBoard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // 返信ステート
+  const [replyingToPostId, setReplyingToPostId] = useState<string | null>(null);
+  const [replyContent, setReplyContent] = useState("");
+  const [isSubmittingReply, setIsSubmittingReply] = useState(false);
+
   const supabase = createClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // 投稿一覧の取得
   const fetchPosts = async () => {
@@ -71,10 +87,9 @@ export default function CommunityBoard() {
           )
         `)
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(100);
 
       if (error) {
-        // テーブル未作成などの場合は静かに処理
         console.warn("Board fetch error:", error.message);
         setErrorMessage(error.message);
         return;
@@ -133,7 +148,7 @@ export default function CommunityBoard() {
     };
   }, []);
 
-  // 投稿送信ハンドラ
+  // 新規投稿送信ハンドラ
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) {
@@ -166,12 +181,50 @@ export default function CommunityBoard() {
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
-      // 再取得
       await fetchPosts();
     } catch (err: any) {
       alert("エラー: " + (err?.message || err));
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // 返信送信ハンドラ
+  const handleSubmitReply = async (parentPostId: string) => {
+    if (!currentUser) {
+      alert("返信するにはログインが必要です。");
+      return;
+    }
+
+    const trimmed = replyContent.trim();
+    if (!trimmed) return;
+    if (trimmed.length > 300) {
+      alert("返信は300文字以内で入力してください。");
+      return;
+    }
+
+    try {
+      setIsSubmittingReply(true);
+      const contentToSave = `<!--reply:${parentPostId}-->${trimmed}`;
+      const { error } = await supabase.from("board_posts").insert([
+        {
+          user_id: currentUser.id,
+          content: contentToSave,
+        },
+      ]);
+
+      if (error) {
+        alert("返信の送信に失敗しました: " + error.message);
+        return;
+      }
+
+      setReplyContent("");
+      setReplyingToPostId(null);
+      await fetchPosts();
+    } catch (err: any) {
+      alert("エラー: " + (err?.message || err));
+    } finally {
+      setIsSubmittingReply(false);
     }
   };
 
@@ -195,6 +248,43 @@ export default function CommunityBoard() {
       alert("削除エラー: " + (err?.message || err));
     }
   };
+
+  // 投稿を親投稿と返信に分類
+  const parsedPosts: ParsedPost[] = posts.map((post) => {
+    const match = post.content.match(/^<!--reply:([^>]+)-->([\s\S]*)$/);
+    if (match) {
+      return {
+        ...post,
+        parent_id: match[1],
+        content: match[2],
+        rawContent: post.content,
+      };
+    }
+    return {
+      ...post,
+      parent_id: null,
+      content: post.content,
+      rawContent: post.content,
+    };
+  });
+
+  // 親投稿一覧（降順）
+  const parentPosts = parsedPosts.filter((p) => !p.parent_id);
+
+  // 返信を parent_id ごとにグループ化（昇順：時系列）
+  const repliesMap = new Map<string, ParsedPost[]>();
+  parsedPosts
+    .filter((p) => p.parent_id)
+    .forEach((reply) => {
+      const pId = reply.parent_id!;
+      const list = repliesMap.get(pId) || [];
+      list.push(reply);
+      repliesMap.set(pId, list);
+    });
+
+  repliesMap.forEach((list) => {
+    list.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  });
 
   return (
     <section className="mt-12 sm:mt-16 pt-10 border-t border-slate-200/80">
@@ -225,7 +315,7 @@ export default function CommunityBoard() {
               <span>更新</span>
             </button>
             <span className="text-xs font-bold text-slate-400 bg-slate-100/80 px-2.5 py-1.5 rounded-xl border border-slate-200">
-              全 {posts.length} 件
+              全 {parentPosts.length} スレッド
             </span>
           </div>
         </div>
@@ -313,7 +403,7 @@ export default function CommunityBoard() {
         </div>
 
         {/* 投稿一覧エリア */}
-        <div className="space-y-3.5">
+        <div className="space-y-4">
           {isLoading ? (
             <div className="py-12 text-center text-slate-400 text-sm font-semibold flex items-center justify-center gap-2">
               <span className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin"></span>
@@ -326,7 +416,7 @@ export default function CommunityBoard() {
                 データベースの準備中または同期中です。しばらく経ってから「更新」ボタンをお試しください。
               </p>
             </div>
-          ) : posts.length === 0 ? (
+          ) : parentPosts.length === 0 ? (
             <div className="py-12 px-4 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 text-center">
               <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center text-xl mx-auto mb-2">
                 ✍️
@@ -337,19 +427,21 @@ export default function CommunityBoard() {
               </p>
             </div>
           ) : (
-            posts.map((post) => {
+            parentPosts.map((post) => {
               const isAuthor = currentUser?.id === post.user_id;
               const canDelete = isAuthor || isAdmin;
               const postProfile = post.profiles;
               const postIsAdmin = !!postProfile?.is_admin;
+              const replies = repliesMap.get(post.id) || [];
+              const isReplying = replyingToPostId === post.id;
 
               return (
                 <div
                   key={post.id}
-                  className="group bg-slate-50/60 hover:bg-slate-50 rounded-2xl p-4 sm:p-5 border border-slate-200/80 transition-all hover:border-slate-300 hover:shadow-xs"
+                  className="group bg-slate-50/70 hover:bg-slate-50 rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200/90 transition-all hover:border-slate-300 hover:shadow-xs"
                 >
+                  {/* 親投稿ヘッダー */}
                   <div className="flex items-start justify-between gap-3 mb-2.5">
-                    {/* 投稿者情報 */}
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-9 h-9 rounded-full overflow-hidden bg-slate-200 border border-slate-300 shrink-0">
                         {postProfile?.avatar_url ? (
@@ -385,23 +477,182 @@ export default function CommunityBoard() {
                       </div>
                     </div>
 
-                    {/* 削除ボタン（本人または管理者） */}
-                    {canDelete && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* 返信ボタン */}
                       <button
                         type="button"
-                        onClick={() => handleDeletePost(post.id)}
-                        className="opacity-0 group-hover:opacity-100 sm:transition-opacity text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 text-xs font-semibold cursor-pointer"
-                        title="投稿を削除"
+                        onClick={() => {
+                          if (!currentUser) {
+                            alert("返信するにはログインが必要です。");
+                            return;
+                          }
+                          setReplyingToPostId(isReplying ? null : post.id);
+                          setReplyContent("");
+                        }}
+                        className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer select-none ${
+                          isReplying
+                            ? "bg-indigo-600 text-white shadow-2xs"
+                            : "bg-white hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 border border-slate-200/80 shadow-2xs"
+                        }`}
+                        title="この投稿に返信する"
                       >
-                        🗑️ 削除
+                        <span>↩️</span>
+                        <span>{isReplying ? "返信を閉じる" : "返信"}</span>
+                        {replies.length > 0 && !isReplying && (
+                          <span className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.2 rounded-full ml-0.5">
+                            {replies.length}
+                          </span>
+                        )}
                       </button>
-                    )}
+
+                      {/* 削除ボタン */}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePost(post.id)}
+                          className="opacity-0 group-hover:opacity-100 sm:transition-opacity text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 text-xs font-semibold cursor-pointer"
+                          title="投稿を削除"
+                        >
+                          🗑️
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {/* 本文 */}
+                  {/* 親投稿本文 */}
                   <p className="text-xs sm:text-sm text-slate-800 whitespace-pre-wrap leading-relaxed pl-1 sm:pl-11 break-words">
                     {post.content}
                   </p>
+
+                  {/* 返信一覧ツリー */}
+                  {replies.length > 0 && (
+                    <div className="mt-4 sm:ml-11 pl-3 sm:pl-4 border-l-2 border-indigo-200 space-y-2.5">
+                      {replies.map((reply) => {
+                        const isReplyAuthor = currentUser?.id === reply.user_id;
+                        const canDeleteReply = isReplyAuthor || isAdmin;
+                        const replyProfile = reply.profiles;
+                        const replyIsAdmin = !!replyProfile?.is_admin;
+
+                        return (
+                          <div
+                            key={reply.id}
+                            className="group/reply bg-white rounded-xl p-3 sm:p-3.5 border border-slate-200/80 shadow-2xs"
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-1.5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-6 h-6 rounded-full overflow-hidden bg-slate-200 border border-slate-300 shrink-0">
+                                  {replyProfile?.avatar_url ? (
+                                    <img
+                                      src={replyProfile.avatar_url}
+                                      alt={replyProfile.artist_name || "user"}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-slate-500">
+                                      💬
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                  <span className="font-extrabold text-xs text-slate-900 truncate">
+                                    {replyProfile?.artist_name || "名無しユーザー"}
+                                  </span>
+                                  {replyIsAdmin && (
+                                    <span className="text-[9px] font-black px-1.5 py-0.2 rounded-md bg-amber-500 text-white">
+                                      👑 俺
+                                    </span>
+                                  )}
+                                  {replyProfile?.role && !replyIsAdmin && (
+                                    <UserRoleBadge role={replyProfile.role} size="xs" />
+                                  )}
+                                  <span className="text-[10px] text-slate-400">
+                                    • {formatRelativeTime(reply.created_at)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {canDeleteReply && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePost(reply.id)}
+                                  className="opacity-0 group-hover/reply:opacity-100 transition-opacity text-slate-400 hover:text-red-500 p-1 text-[11px] cursor-pointer"
+                                  title="返信を削除"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </div>
+
+                            <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed pl-8 break-words">
+                              {reply.content}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* インライン返信フォーム */}
+                  {isReplying && (
+                    <div className="mt-4 sm:ml-11 p-3.5 bg-indigo-50/70 rounded-2xl border border-indigo-200/80 animate-in fade-in duration-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-indigo-900 flex items-center gap-1">
+                          <span>↩️</span>
+                          <span>
+                            {postProfile?.artist_name || "この投稿"} への返信
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setReplyingToPostId(null)}
+                          className="text-[11px] text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                        >
+                          ✕ キャンセル
+                        </button>
+                      </div>
+
+                      <textarea
+                        ref={replyTextareaRef}
+                        value={replyContent}
+                        onChange={(e) => setReplyContent(e.target.value)}
+                        placeholder="返信を入力（最大300文字）..."
+                        rows={2}
+                        maxLength={300}
+                        className="w-full bg-white border border-indigo-200 rounded-xl p-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 resize-none"
+                        autoFocus
+                      />
+
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-[11px] text-indigo-600/70 font-medium">
+                          {replyContent.length} / 300文字
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setReplyingToPostId(null)}
+                            className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200 cursor-pointer"
+                          >
+                            キャンセル
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSubmitReply(post.id)}
+                            disabled={isSubmittingReply || !replyContent.trim()}
+                            className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black shadow-xs disabled:opacity-50 disabled:pointer-events-none cursor-pointer flex items-center gap-1"
+                          >
+                            {isSubmittingReply ? (
+                              <>
+                                <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                                <span>送信中...</span>
+                              </>
+                            ) : (
+                              <span>返信する</span>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })

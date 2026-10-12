@@ -4,91 +4,139 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 
-export interface CommentTickerItem {
+export interface ActivityTickerItem {
   id: string;
+  type: "comment" | "like";
   song_id: string;
   song_title: string;
   artist_name: string;
-  likes_count: number;
   created_at: string;
 }
 
+// 既存コードとの後方互換用エイリアス
+export type CommentTickerItem = ActivityTickerItem;
+
 interface RecentCommentsTickerProps {
-  initialComments?: CommentTickerItem[];
+  initialActivities?: ActivityTickerItem[];
+  initialComments?: ActivityTickerItem[]; // 互換用
 }
 
-export default function RecentCommentsTicker({ initialComments = [] }: RecentCommentsTickerProps) {
-  const [comments, setComments] = useState<CommentTickerItem[]>(initialComments);
+export default function RecentCommentsTicker({
+  initialActivities,
+  initialComments,
+}: RecentCommentsTickerProps) {
+  const [activities, setActivities] = useState<ActivityTickerItem[]>(
+    initialActivities || initialComments || []
+  );
   const supabase = createClient();
 
-  // 最新コメント一覧の取得処理（直近5件）
-  const fetchLatestComments = async () => {
+  // 最新コメント＆最新いいねを合算して直近5件を取得
+  const fetchLatestActivities = async () => {
     try {
-      const { data: commentsData, error: cErr } = await supabase
-        .from("amu_comments")
-        .select("id, song_id, created_at")
-        .order("created_at", { ascending: false })
-        .limit(5);
+      const [commentsRes, likesRes] = await Promise.all([
+        supabase
+          .from("amu_comments")
+          .select("id, song_id, created_at")
+          .order("created_at", { ascending: false })
+          .limit(5),
+        supabase
+          .from("likes")
+          .select("id, song_id, created_at")
+          .order("created_at", { ascending: false })
+          .limit(5),
+      ]);
 
-      if (cErr || !commentsData || commentsData.length === 0) return;
+      const commentsData = commentsRes.data || [];
+      const likesData = likesRes.data || [];
 
-      const songIds = [...new Set(commentsData.map((c) => c.song_id))];
+      if (commentsData.length === 0 && likesData.length === 0) return;
+
+      const songIds = [
+        ...new Set([
+          ...commentsData.map((c) => c.song_id),
+          ...likesData.map((l) => l.song_id),
+        ]),
+      ].filter(Boolean);
+
       const { data: songsData } = await supabase
         .from("songs")
-        .select("id, title, artist, profiles:profiles!fk_user_profile(artist_name), likes(user_id)")
+        .select("id, title, artist, profiles:profiles!fk_user_profile(artist_name)")
         .in("id", songIds);
 
-      const songMap = new Map<string, { title: string; artist_name: string; likes_count: number }>();
+      const songMap = new Map<string, { title: string; artist_name: string }>();
       songsData?.forEach((s: any) => {
         songMap.set(s.id, {
-          title: s.title || "曲",
+          title: s.title || "楽曲",
           artist_name: s.artist || s.profiles?.artist_name || "クリエイター",
-          likes_count: s.likes?.length || 0,
         });
       });
 
-      const items: CommentTickerItem[] = [];
+      const items: ActivityTickerItem[] = [];
+
       commentsData.forEach((c) => {
         const song = songMap.get(c.song_id);
         if (song) {
           items.push({
             id: c.id,
+            type: "comment",
             song_id: c.song_id,
             song_title: song.title,
             artist_name: song.artist_name,
-            likes_count: song.likes_count,
             created_at: c.created_at,
           });
         }
       });
 
-      if (items.length > 0) {
-        setComments(items);
+      likesData.forEach((l) => {
+        const song = songMap.get(l.song_id);
+        if (song) {
+          items.push({
+            id: l.id,
+            type: "like",
+            song_id: l.song_id,
+            song_title: song.title,
+            artist_name: song.artist_name,
+            created_at: l.created_at,
+          });
+        }
+      });
+
+      // 新しい順にソートし、直近5件に絞る
+      items.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      const top5 = items.slice(0, 5);
+
+      if (top5.length > 0) {
+        setActivities(top5);
       }
     } catch (e) {
-      console.error("Failed to fetch latest comments for ticker:", e);
+      console.error("Failed to fetch latest activities for ticker:", e);
     }
   };
 
   useEffect(() => {
-    if (initialComments.length === 0) {
-      fetchLatestComments();
+    if (activities.length === 0) {
+      fetchLatestActivities();
     }
 
-    // 新規コメント投稿のリアルタイム購読
+    // コメント・いいねのリアルタイム購読
     const channel = supabase
-      .channel("realtime-comments-ticker")
+      .channel("realtime-activity-ticker")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "amu_comments" },
-        () => {
-          fetchLatestComments();
-        }
+        () => fetchLatestActivities()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "likes" },
+        () => fetchLatestActivities()
       )
       .subscribe();
 
     // 60秒ごとのポーリング更新（念のためのフォールバック）
-    const interval = setInterval(fetchLatestComments, 60000);
+    const interval = setInterval(fetchLatestActivities, 60000);
 
     return () => {
       supabase.removeChannel(channel);
@@ -122,12 +170,12 @@ export default function RecentCommentsTicker({ initialComments = [] }: RecentCom
     }
   };
 
-  if (!comments || comments.length === 0) {
+  if (!activities || activities.length === 0) {
     return null;
   }
 
   // 無限スクロール用に2組並べる
-  const displayItems = [...comments, ...comments];
+  const displayItems = [...activities, ...activities];
 
   return (
     <div className="w-full mb-3 sm:mb-4 group">
@@ -139,14 +187,14 @@ export default function RecentCommentsTicker({ initialComments = [] }: RecentCom
             <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
           </span>
           <span className="text-[11px] font-black tracking-wider text-slate-700 whitespace-nowrap flex items-center gap-1">
-            <span>💬</span>
-            <span className="hidden sm:inline">コメント速報</span>
+            <span>✨</span>
+            <span className="hidden sm:inline">最新アクティビティ</span>
             <span className="sm:hidden">速報</span>
           </span>
         </div>
 
         {/* 左右のフェードグラデーションマスク */}
-        <div className="pointer-events-none absolute left-[88px] sm:left-[118px] top-0 bottom-0 w-6 bg-gradient-to-r from-slate-50 to-transparent z-10" />
+        <div className="pointer-events-none absolute left-[84px] sm:left-[130px] top-0 bottom-0 w-6 bg-gradient-to-r from-slate-50 to-transparent z-10" />
         <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-50 to-transparent z-10" />
 
         {/* スクロールティッカー本体 */}
@@ -154,32 +202,50 @@ export default function RecentCommentsTicker({ initialComments = [] }: RecentCom
           <div className="flex w-max items-center animate-ticker group-hover:[animation-play-state:paused]">
             {displayItems.map((item, index) => {
               const timeText = formatTime(item.created_at);
+              const isComment = item.type === "comment";
+              const targetHref = isComment
+                ? `/song/${item.song_id}#comment-${item.id}`
+                : `/song/${item.song_id}`;
+
               return (
                 <Link
-                  key={`${item.id}-${index}`}
-                  href={`/song/${item.song_id}#comment-${item.id}`}
+                  key={`${item.type}-${item.id}-${index}`}
+                  href={targetHref}
                   className="flex items-center gap-2 px-3 py-0.5 text-xs text-slate-700 hover:text-indigo-600 transition-colors whitespace-nowrap cursor-pointer select-none group/item"
-                  title="クリックしてこのコメントにジャンプ"
+                  title={
+                    isComment
+                      ? "クリックしてこのコメントにジャンプ"
+                      : "クリックしてこの楽曲ページを開く"
+                  }
                 >
                   <span className="font-mono font-bold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200 text-[10px] tracking-tight">
                     {timeText}
                   </span>
+
+                  {/* タイプ別アイコンバッジ */}
+                  <span
+                    className={`inline-flex items-center justify-center text-[11px] px-1.5 py-0.5 rounded-md font-bold leading-none ${
+                      isComment
+                        ? "bg-indigo-50 text-indigo-600 border border-indigo-200/60"
+                        : "bg-rose-50 text-rose-600 border border-rose-200/60"
+                    }`}
+                  >
+                    {isComment ? "💬" : "❤️"}
+                  </span>
+
                   <span className="font-semibold text-slate-900 group-hover/item:text-indigo-600 group-hover/item:underline">
                     {item.song_title}
                     <span className="text-slate-400 font-normal mx-1">/</span>
                     <span className="text-slate-600">{item.artist_name}</span>
                   </span>
-                  <span className="text-slate-500 font-normal text-[11px]">
-                    が コメントされました
-                  </span>
 
-                  {/* 楽曲いいね数バッジ */}
-                  {typeof item.likes_count === "number" && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-50 border border-rose-200/70 text-rose-600 text-[10px] font-bold shadow-2xs">
-                      <span className="text-[10px]">❤️</span>
-                      <span>{item.likes_count}</span>
-                    </span>
-                  )}
+                  <span
+                    className={`font-medium text-[11px] ${
+                      isComment ? "text-slate-500" : "text-rose-600"
+                    }`}
+                  >
+                    {isComment ? "が コメントされました" : "が いいねされました"}
+                  </span>
 
                   <span className="text-slate-300 font-bold ml-3 mr-1">•</span>
                 </Link>
