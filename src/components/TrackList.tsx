@@ -105,70 +105,38 @@ export default function TrackList({
             <div key={song.id} className="flex flex-col min-w-0">
               <div className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 md:p-5 transition-all duration-300 hover:shadow-lg flex flex-row items-center gap-2.5 sm:gap-4 group relative z-10 overflow-hidden">
               
-              {/* カバーアート＆中央の再生マーク、および再生マーク真下のMOVIE絵文字ボタン */}
-              <div className="relative h-14 w-14 sm:h-18 sm:w-18 md:h-20 md:w-20 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden shrink-0 shadow-2xs group/cover">
-                {/* ランクバッジ（人気トラック時） */}
+              {/* カバーアート＆再生ボタン（ネイティブボタン） */}
+              <button 
+                type="button"
+                className="relative h-14 w-14 sm:h-18 sm:w-18 md:h-20 md:w-20 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden shrink-0 cursor-pointer active:scale-95 transition-transform text-left p-0 shadow-2xs"
+                onClick={() => playSong({ id: song.id, title: song.title, file_url: song.file_url, cover_url: song.cover_url, artist: artistName }, songs)}
+              >
                 {showRank && (
                   <div className="absolute top-0 left-0 w-5 h-5 sm:w-6 sm:h-6 bg-indigo-600/90 backdrop-blur text-white font-black rounded-br-lg flex items-center justify-center text-[10px] sm:text-xs z-20 shadow-md border-b border-r border-indigo-500/50">
                     {index + 1}
                   </div>
                 )}
-
-                {/* 背景ジャケット画像 */}
                 {song.cover_url ? (
-                  <img
-                    src={toCdnUrl(song.cover_url)}
-                    alt="cover"
-                    className={`w-full h-full object-cover transition-transform duration-500 ${isThisPlaying ? "scale-105" : "group-hover/cover:scale-105"}`}
-                  />
+                  <img src={toCdnUrl(song.cover_url)} alt="cover" className={`w-full h-full object-cover transition-transform duration-500 ${isThisPlaying ? "scale-110" : "group-hover:scale-110"}`} />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-slate-100">
                     <svg className="w-6 h-6 sm:w-8 sm:h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
                   </div>
                 )}
 
-                {/* カバーアート全体をクリックで再生（再生ボタン領域） */}
-                <button 
-                  type="button"
-                  className="absolute inset-0 w-full h-full bg-black/25 sm:bg-black/20 hover:bg-black/40 flex flex-col items-center justify-center cursor-pointer transition-colors z-10 p-0"
-                  onClick={() => playSong({ id: song.id, title: song.title, file_url: song.file_url, cover_url: song.cover_url, artist: artistName }, songs)}
-                  title={isThisPlaying ? "一時停止" : "再生"}
-                >
-                  {/* 中央の再生マーク */}
-                  <div className={`text-white drop-shadow-md transition-transform ${song.synced_lyrics ? "-translate-y-1 sm:-translate-y-1.5" : ""}`}>
-                    {isThisPlaying ? (
-                      <div className="flex gap-1 items-end h-4 sm:h-5">
-                        <div className="w-1 sm:w-1.5 h-3 sm:h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                        <div className="w-1 sm:w-1.5 h-4 sm:h-5 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                        <div className="w-1 sm:w-1.5 h-3 sm:h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                      </div>
-                    ) : (
-                      <svg className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7 fill-current ml-0.5" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z"/>
-                      </svg>
-                    )}
-                  </div>
-                </button>
-
-                {/* ★ 再生マークの「真下」：リリモ対応曲のMOVIE絵文字ボタン（タップで小窓が現れる） */}
-                {song.synced_lyrics && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setLyrimoModalSong({
-                        ...song,
-                        artist: artistName,
-                      });
-                    }}
-                    title="🎬 タップしてリリモ小窓を開く（文字PV・リリック）"
-                    className="absolute bottom-1 left-1/2 -translate-x-1/2 z-20 inline-flex items-center justify-center gap-0.5 px-1.5 py-0.5 rounded-full bg-black/75 hover:bg-indigo-600 active:scale-95 text-white backdrop-blur-md border border-white/40 shadow-md text-[8px] sm:text-[9px] font-black cursor-pointer transition-all hover:scale-105 select-none"
-                  >
-                    <span>🎬</span>
-                    <span className="font-extrabold tracking-tight">MOVIE</span>
-                  </button>
-                )}
-              </div>
+                {/* オーバーレイ再生インジケータ */}
+                <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity pointer-events-none ${isThisPlaying ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                  {isThisPlaying ? (
+                    <div className="flex gap-1">
+                      <div className="w-1 sm:w-1.5 h-3 sm:h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                      <div className="w-1 sm:w-1.5 h-4 sm:h-6 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                      <div className="w-1 sm:w-1.5 h-3 sm:h-4 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                    </div>
+                  ) : (
+                    <svg className="w-6 h-6 sm:w-8 sm:h-8 text-white fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  )}
+                </div>
+              </button>
               
               {/* メタデータ（w-fullを排除しflex-1 min-w-0で横はみ出しを完全防止） */}
               <div className="flex-1 min-w-0 text-left py-0.5 overflow-hidden">
@@ -292,19 +260,40 @@ export default function TrackList({
                 </div>
               </div>
 
-              {/* スマホ・PC共通の明示的再生ボタン（はみ出さないようサイズ適正化・shrink-0） */}
-              <button 
-                type="button"
-                onClick={() => playSong({ id: song.id, title: song.title, file_url: song.file_url, cover_url: song.cover_url, artist: artistName }, songs)}
-                className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full border items-center justify-center transition-all shrink-0 active:scale-90 flex cursor-pointer shadow-xs ml-auto ${isThisPlaying ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-900 hover:text-white hover:border-slate-900'}`}
-                title="再生"
-              >
-                {isThisPlaying ? (
-                   <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-                ) : (
-                   <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              {/* 右側の再生マーク、およびその下に配置するリリモMOVIE絵文字ボタン */}
+              <div className="flex flex-col items-center justify-center shrink-0 ml-auto gap-1">
+                <button 
+                  type="button"
+                  onClick={() => playSong({ id: song.id, title: song.title, file_url: song.file_url, cover_url: song.cover_url, artist: artistName }, songs)}
+                  className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full border items-center justify-center transition-all shrink-0 active:scale-90 flex cursor-pointer shadow-xs ${isThisPlaying ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-900 hover:text-white hover:border-slate-900'}`}
+                  title={isThisPlaying ? "一時停止" : "再生"}
+                >
+                  {isThisPlaying ? (
+                     <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                  ) : (
+                     <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  )}
+                </button>
+
+                {/* ★ 右のほうにある再生マークの「下」：リリモ対応曲のMOVIE絵文字ボタン */}
+                {song.synced_lyrics && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLyrimoModalSong({
+                        ...song,
+                        artist: artistName,
+                      });
+                    }}
+                    title="🎬 タップしてリリモ小窓を開く（文字PV・リリック）"
+                    className="inline-flex items-center justify-center gap-0.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-indigo-50 hover:bg-indigo-100 active:scale-95 text-indigo-600 border border-indigo-200/90 text-[10px] sm:text-xs font-black shadow-2xs hover:scale-105 transition-all cursor-pointer group/movie select-none"
+                  >
+                    <span className="text-xs group-hover/movie:rotate-12 transition-transform">🎬</span>
+                    <span className="font-extrabold tracking-tight text-[8px] sm:text-[9px]">MOVIE</span>
+                  </button>
                 )}
-              </button>
+              </div>
               </div>
             
               {/* コメントセクション */}
