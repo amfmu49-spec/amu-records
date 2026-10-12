@@ -400,13 +400,6 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
               </p>
             </div>
           )}
-
-          {/* Lyrimo エンジンバッジ */}
-          <div className="absolute top-3.5 left-3.5 z-20 flex items-center gap-2 pointer-events-none">
-            <span className="text-[10px] font-mono tracking-widest text-indigo-300 bg-slate-900/80 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-indigo-500/30">
-              ⚡ 60FPS LYRIMO ENGINE
-            </span>
-          </div>
         </div>
       )}
 
