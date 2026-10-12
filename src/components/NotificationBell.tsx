@@ -19,25 +19,17 @@ interface Announcement {
   created_by?: string | null;
 }
 
-export interface PersonalNotification {
+export interface CreatorReactionItem {
   id: string;
-  user_id: string;
-  actor_id: string;
+  type: "like" | "comment";
   song_id: string;
-  type: "like" | "comment" | "reply";
+  song_title: string;
+  song_cover?: string | null;
+  actor_name: string;
+  actor_avatar?: string | null;
   content?: string | null;
-  is_read: boolean;
   created_at: string;
-  actor?: {
-    id: string;
-    display_name?: string | null;
-    avatar_url?: string | null;
-  } | null;
-  song?: {
-    id: string;
-    title: string;
-    cover_url?: string | null;
-  } | null;
+  is_read: boolean;
 }
 
 const CATEGORY_MAP: Record<string, { label: string; badgeClass: string; icon: string }> = {
@@ -51,19 +43,18 @@ export default function NotificationBell() {
   const router = useRouter();
   const supabase = createClient();
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"personal" | "announcements">("personal");
+  const [activeTab, setActiveTab] = useState<"personal" | "announcements">("announcements");
 
   // 全体お知らせ
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [hasAnnouncementUnread, setHasAnnouncementUnread] = useState(false);
 
-  // 個人宛て通知
-  const [personalNotifications, setPersonalNotifications] = useState<PersonalNotification[]>([]);
-  const [unreadPersonalCount, setUnreadPersonalCount] = useState(0);
+  // クリエイター宛て通知（自分の曲についたいいね・コメント）
+  const [reactions, setReactions] = useState<CreatorReactionItem[]>([]);
+  const [unreadReactionCount, setUnreadReactionCount] = useState(0);
 
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   // 一斉送信フォームの状態
@@ -82,9 +73,9 @@ export default function NotificationBell() {
   const [passcode, setPasscode] = useState("");
   const [passcodeError, setPasscodeError] = useState("");
 
-  const popoverRef = useRef<HTMLDivElement>(null);
+  const bellButtonRef = useRef<HTMLButtonElement>(null);
 
-  // お知らせ一覧の取得
+  // 全体お知らせの取得
   const fetchAnnouncements = async () => {
     try {
       const { data, error } = await supabase
@@ -113,50 +104,141 @@ export default function NotificationBell() {
     }
   };
 
-  // 個人宛て通知の取得
-  const fetchPersonalNotifications = async (userId: string) => {
+  // 自分の投稿曲に対するいいね・コメント（クリエイター宛て通知）を直接集計
+  const fetchCreatorReactions = async (currentUserId: string) => {
     try {
-      const { data, error } = await supabase
-        .from("notifications")
-        .select(`
-          id,
-          user_id,
-          actor_id,
-          song_id,
-          type,
-          content,
-          is_read,
-          created_at,
-          actor:profiles!actor_id(id, display_name, avatar_url),
-          song:songs!song_id(id, title, cover_url)
-        `)
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(40);
+      // 1. ユーザーが投稿した楽曲リストを取得
+      const { data: mySongs, error: songsError } = await supabase
+        .from("songs")
+        .select("id, title, cover_url")
+        .eq("user_id", currentUserId);
 
-      if (error) {
-        // テーブル未作成時などのエラーを安全に無視
-        console.warn("通知テーブル取得スキップ (未マイグレーション等の可能性):", error.message);
+      if (songsError || !mySongs || mySongs.length === 0) {
+        // 投稿楽曲がない場合は空
+        setReactions([]);
+        setUnreadReactionCount(0);
         return;
       }
 
-      const list: PersonalNotification[] = (data as any) || [];
-      setPersonalNotifications(list);
-      const unread = list.filter((n) => !n.is_read).length;
-      setUnreadPersonalCount(unread);
+      const songMap = new Map<string, { title: string; cover_url: string | null }>();
+      const mySongIds: string[] = [];
+      mySongs.forEach((s) => {
+        mySongIds.push(s.id);
+        songMap.set(s.id, {
+          title: s.title || "楽曲",
+          cover_url: s.cover_url || null,
+        });
+      });
 
-      // 未読がある場合は初期タブを「あなた宛て」にする
-      if (unread > 0) {
+      // 2. 自分の曲に対する最新コメント & 最新いいねを並行取得 (自分自身のアクションは除外)
+      const [commentsRes, likesRes] = await Promise.all([
+        supabase
+          .from("amu_comments")
+          .select("id, song_id, user_id, content, created_at")
+          .in("song_id", mySongIds)
+          .neq("user_id", currentUserId)
+          .order("created_at", { ascending: false })
+          .limit(25),
+        supabase
+          .from("likes")
+          .select("id, song_id, user_id, created_at")
+          .in("song_id", mySongIds)
+          .neq("user_id", currentUserId)
+          .order("created_at", { ascending: false })
+          .limit(25),
+      ]);
+
+      const commentsData = commentsRes.data || [];
+      const likesData = likesRes.data || [];
+
+      // アクションを起こしたユーザー一覧
+      const actorIds = [
+        ...new Set([
+          ...commentsData.map((c) => c.user_id),
+          ...likesData.map((l) => l.user_id),
+        ]),
+      ].filter(Boolean);
+
+      // 3. プロフィール情報を取得
+      let profilesMap = new Map<string, { artist_name: string; avatar_url: string | null }>();
+      if (actorIds.length > 0) {
+        const { data: profilesData } = await supabase
+          .from("profiles")
+          .select("id, artist_name, avatar_url")
+          .in("id", actorIds);
+
+        profilesData?.forEach((p) => {
+          profilesMap.set(p.id, {
+            artist_name: p.artist_name || "リスナー",
+            avatar_url: p.avatar_url || null,
+          });
+        });
+      }
+
+      // 4. 既読判定タイムスタンプを取得
+      const lastSeenStr = localStorage.getItem("amu_last_seen_reactions_timestamp");
+      const lastSeenTime = lastSeenStr ? new Date(lastSeenStr).getTime() : 0;
+
+      const items: CreatorReactionItem[] = [];
+
+      commentsData.forEach((c) => {
+        const song = songMap.get(c.song_id);
+        const actor = profilesMap.get(c.user_id);
+        const itemTime = new Date(c.created_at).getTime();
+        items.push({
+          id: `comment-${c.id}`,
+          type: "comment",
+          song_id: c.song_id,
+          song_title: song?.title || "楽曲",
+          song_cover: song?.cover_url || null,
+          actor_name: actor?.artist_name || "リスナー",
+          actor_avatar: actor?.avatar_url || null,
+          content: c.content,
+          created_at: c.created_at,
+          is_read: itemTime <= lastSeenTime,
+        });
+      });
+
+      likesData.forEach((l) => {
+        const song = songMap.get(l.song_id);
+        const actor = profilesMap.get(l.user_id);
+        const itemTime = new Date(l.created_at).getTime();
+        items.push({
+          id: `like-${l.id}`,
+          type: "like",
+          song_id: l.song_id,
+          song_title: song?.title || "楽曲",
+          song_cover: song?.cover_url || null,
+          actor_name: actor?.artist_name || "リスナー",
+          actor_avatar: actor?.avatar_url || null,
+          created_at: l.created_at,
+          is_read: itemTime <= lastSeenTime,
+        });
+      });
+
+      // 新しい順に並び替え
+      items.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      const topReactions = items.slice(0, 30);
+      setReactions(topReactions);
+
+      const unreadCount = topReactions.filter((r) => !r.is_read).length;
+      setUnreadReactionCount(unreadCount);
+
+      // 未読リアクションがある場合は「あなた宛て」タブを優先表示
+      if (unreadCount > 0) {
         setActiveTab("personal");
       }
     } catch (err) {
-      console.warn("fetchPersonalNotifications error:", err);
+      console.warn("fetchCreatorReactions error:", err);
     }
   };
 
-  // ユーザー及び管理者権限チェック
+  // 初期化 & データ取得
   useEffect(() => {
-    async function checkUserAndData() {
+    async function init() {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
 
@@ -171,9 +253,8 @@ export default function NotificationBell() {
           setIsAdmin(true);
         }
 
-        await fetchPersonalNotifications(user.id);
+        await fetchCreatorReactions(user.id);
       } else {
-        // 未ログイン時は全体お知らせタブをデフォルトに
         setActiveTab("announcements");
       }
 
@@ -181,21 +262,15 @@ export default function NotificationBell() {
     }
 
     setMounted(true);
-    checkUserAndData();
+    init();
 
-    // Supabase Realtime サブスクリプションでお知らせの変更を即時反映
+    // 全体お知らせのリアルタイム監視
     const annChannel = supabase
       .channel("announcements_realtime_bell")
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "announcements",
-        },
-        () => {
-          fetchAnnouncements();
-        }
+        { event: "*", schema: "public", table: "announcements" },
+        () => fetchAnnouncements()
       )
       .subscribe();
 
@@ -204,28 +279,26 @@ export default function NotificationBell() {
     };
   }, []);
 
-  // 個人宛て通知の Realtime 監視（ログイン時のみ）
+  // いいね & コメントのリアルタイム監視（ログインクリエイター向け）
   useEffect(() => {
     if (!user) return;
 
-    const notifChannel = supabase
-      .channel(`personal_notifications_${user.id}`)
+    const reactionChannel = supabase
+      .channel(`reactions_realtime_${user.id}`)
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          fetchPersonalNotifications(user.id);
-        }
+        { event: "*", schema: "public", table: "amu_comments" },
+        () => fetchCreatorReactions(user.id)
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "likes" },
+        () => fetchCreatorReactions(user.id)
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(notifChannel);
+      supabase.removeChannel(reactionChannel);
     };
   }, [user]);
 
@@ -235,9 +308,8 @@ export default function NotificationBell() {
     setIsOpen(nextState);
 
     if (nextState) {
-      // ベルを開いた際に最新データを即座に再取得
       if (user) {
-        fetchPersonalNotifications(user.id);
+        fetchCreatorReactions(user.id);
       }
       fetchAnnouncements();
 
@@ -248,7 +320,7 @@ export default function NotificationBell() {
     }
   };
 
-  // タブ切り替え時の未読処理
+  // タブ切り替え
   const handleTabChange = (tab: "personal" | "announcements") => {
     setActiveTab(tab);
     if (tab === "announcements" && announcements.length > 0) {
@@ -258,65 +330,27 @@ export default function NotificationBell() {
   };
 
   // 個人通知をすべて既読にする
-  const handleMarkAllPersonalAsRead = async () => {
-    if (!user || unreadPersonalCount === 0) return;
-
-    try {
-      const { error } = await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("user_id", user.id)
-        .eq("is_read", false);
-
-      if (!error) {
-        setPersonalNotifications((prev) =>
-          prev.map((n) => ({ ...n, is_read: true }))
-        );
-        setUnreadPersonalCount(0);
-      }
-    } catch (err) {
-      console.error("既読更新エラー:", err);
-    }
+  const handleMarkAllPersonalAsRead = () => {
+    localStorage.setItem("amu_last_seen_reactions_timestamp", new Date().toISOString());
+    setReactions((prev) => prev.map((r) => ({ ...r, is_read: true })));
+    setUnreadReactionCount(0);
   };
 
-  // 個人通知クリック時の挙動（既読にして該当曲へ遷移）
-  const handleNotificationClick = async (notif: PersonalNotification) => {
-    if (!notif.is_read) {
-      // 既読に更新
-      supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("id", notif.id)
-        .then();
-
-      setPersonalNotifications((prev) =>
-        prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
-      );
-      setUnreadPersonalCount((prev) => Math.max(0, prev - 1));
-    }
+  // 通知クリック時（該当曲ページへ遷移）
+  const handleNotificationClick = (item: CreatorReactionItem) => {
+    // 既読タイムスタンプを更新
+    localStorage.setItem("amu_last_seen_reactions_timestamp", new Date().toISOString());
+    setReactions((prev) =>
+      prev.map((r) => (r.id === item.id ? { ...r, is_read: true } : r))
+    );
+    setUnreadReactionCount((prev) => Math.max(0, prev - 1));
 
     setIsOpen(false);
 
-    if (notif.song_id) {
-      router.push(`/song/${notif.song_id}`);
+    if (item.song_id) {
+      router.push(`/song/${item.song_id}`);
     }
   };
-
-  // 外側クリックで閉じる
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isOpen]);
 
   // 管理者による一斉送信
   const handleCreateAnnouncement = async (e: React.FormEvent) => {
@@ -365,9 +399,7 @@ export default function NotificationBell() {
         .select()
         .single();
 
-      // DBに image_url カラムがまだ作成されていない場合のフォールバック（自動再試行）
       if (error && (error.message?.includes("image_url") || error.details?.includes("image_url") || error.code === "PGRST204")) {
-        console.warn("Retrying announcement insert without image_url...");
         delete insertPayload.image_url;
         const retry = await supabase
           .from("announcements")
@@ -376,9 +408,6 @@ export default function NotificationBell() {
           .single();
         data = retry.data;
         error = retry.error;
-        if (!error) {
-          alert("※お知らせは配信されましたが、画像カラム(image_url)がSupabaseに未反映のため画像は除外されました。SupabaseでマイグレーションSQLを実行してください。");
-        }
       }
 
       if (error) {
@@ -395,7 +424,6 @@ export default function NotificationBell() {
       setNewIsPinned(false);
       setShowAdminForm(false);
 
-      // 一覧を再取得
       await fetchAnnouncements();
     } catch (err: any) {
       alert("エラーが発生しました: " + (err?.message || err));
@@ -501,13 +529,14 @@ export default function NotificationBell() {
   };
 
   // 未読の総合判定
-  const totalUnreadCount = unreadPersonalCount + (hasAnnouncementUnread ? 1 : 0);
+  const totalUnreadCount = unreadReactionCount + (hasAnnouncementUnread ? 1 : 0);
   const isBellActive = totalUnreadCount > 0;
 
   return (
-    <div className="relative" ref={popoverRef}>
+    <div className="relative">
       {/* 🔔 ベルボタン */}
       <button
+        ref={bellButtonRef}
         type="button"
         onClick={handleToggleOpen}
         aria-label="お知らせ・通知"
@@ -538,13 +567,13 @@ export default function NotificationBell() {
           <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-0.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-4 min-w-4 px-1 bg-rose-500 text-[9px] font-black text-white items-center justify-center shadow-xs">
-              {unreadPersonalCount > 0 ? (unreadPersonalCount > 9 ? "9+" : unreadPersonalCount) : "!"}
+              {unreadReactionCount > 0 ? (unreadReactionCount > 9 ? "9+" : unreadReactionCount) : "!"}
             </span>
           </span>
         )}
       </button>
 
-      {/* お知らせ・通知中央モーダル */}
+      {/* お知らせ・通知中央モーダル（背景オーバーレイクリックでのみ閉じる） */}
       {isOpen && mounted && createPortal(
         <div
           className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200"
@@ -590,9 +619,9 @@ export default function NotificationBell() {
                   }`}
                 >
                   <span>💌 あなた宛て</span>
-                  {unreadPersonalCount > 0 && (
+                  {unreadReactionCount > 0 && (
                     <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
-                      {unreadPersonalCount}
+                      {unreadReactionCount}
                     </span>
                   )}
                 </button>
@@ -696,7 +725,7 @@ export default function NotificationBell() {
                           setNewImageFile(null);
                           setNewImagePreview(null);
                         }}
-                        className="absolute top-1.5 right-1.5 bg-black/70 hover:bg-black text-white text-[10px] px-2 py-0.5 rounded-full"
+                        className="absolute top-1.5 right-1.5 bg-black/70 hover:bg-black text-white text-[10px] px-2 py-0.5 rounded-full cursor-pointer"
                       >
                         ✕ 削除
                       </button>
@@ -742,12 +771,12 @@ export default function NotificationBell() {
               {activeTab === "personal" ? (
                 /* 💌 あなた宛ての通知タブ */
                 <div>
-                  {/* サブヘッダー（未読一括処理など） */}
-                  <div className="px-5 py-2.5 bg-slate-50/80 flex items-center justify-between text-xs">
+                  {/* サブヘッダー */}
+                  <div className="px-5 py-2.5 bg-slate-50/80 flex items-center justify-between text-xs sticky top-0 z-10 backdrop-blur-xs border-b border-slate-100">
                     <span className="text-slate-500 font-medium">
-                      楽曲へのいいねやコメント
+                      あなたの曲についたリアクション
                     </span>
-                    {unreadPersonalCount > 0 && (
+                    {unreadReactionCount > 0 && (
                       <button
                         type="button"
                         onClick={handleMarkAllPersonalAsRead}
@@ -758,7 +787,7 @@ export default function NotificationBell() {
                     )}
                   </div>
 
-                  {personalNotifications.length === 0 ? (
+                  {reactions.length === 0 ? (
                     <div className="p-12 text-center space-y-2">
                       <div className="text-3xl">💌</div>
                       <p className="text-sm font-bold text-slate-700">まだ通知はありません</p>
@@ -767,22 +796,20 @@ export default function NotificationBell() {
                       </p>
                     </div>
                   ) : (
-                    personalNotifications.map((notif) => {
-                      const actorName = notif.actor?.display_name || "名無しのリスナー";
-                      const actorAvatar = notif.actor?.avatar_url ? toCdnUrl(notif.actor.avatar_url) : null;
-                      const songTitle = notif.song?.title || "あなたの楽曲";
-                      const songCover = notif.song?.cover_url ? toCdnUrl(notif.song.cover_url) : null;
+                    reactions.map((item) => {
+                      const actorAvatar = item.actor_avatar ? toCdnUrl(item.actor_avatar) : null;
+                      const songCover = item.song_cover ? toCdnUrl(item.song_cover) : null;
 
                       return (
                         <div
-                          key={notif.id}
-                          onClick={() => handleNotificationClick(notif)}
+                          key={item.id}
+                          onClick={() => handleNotificationClick(item)}
                           className={`p-4 transition-all hover:bg-slate-50 cursor-pointer flex items-start gap-3 relative ${
-                            !notif.is_read ? "bg-indigo-50/40" : ""
+                            !item.is_read ? "bg-indigo-50/40" : ""
                           }`}
                         >
                           {/* 未読インジケーター */}
-                          {!notif.is_read && (
+                          {!item.is_read && (
                             <div className="absolute left-1.5 top-5 w-1.5 h-1.5 rounded-full bg-rose-500"></div>
                           )}
 
@@ -791,43 +818,41 @@ export default function NotificationBell() {
                             {actorAvatar ? (
                               <img
                                 src={actorAvatar}
-                                alt={actorName}
+                                alt={item.actor_name}
                                 className="w-10 h-10 rounded-full object-cover border border-slate-200"
                               />
                             ) : (
                               <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white text-sm font-black shadow-xs">
-                                {actorName.slice(0, 1).toUpperCase()}
+                                {item.actor_name.slice(0, 1).toUpperCase()}
                               </div>
                             )}
 
                             {/* タイプ別ミニバッジ */}
                             <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs shadow-xs bg-white border border-slate-100">
-                              {notif.type === "like" ? "❤️" : notif.type === "comment" ? "💬" : "↩️"}
+                              {item.type === "like" ? "❤️" : "💬"}
                             </span>
                           </div>
 
                           {/* 通知メッセージ本文 */}
                           <div className="flex-1 min-w-0">
                             <p className="text-xs sm:text-sm text-slate-800 leading-snug">
-                              <span className="font-extrabold text-slate-900">{actorName}</span>
-                              {notif.type === "like" ? (
-                                <span> さんがあなたの曲「<b className="text-indigo-600">{songTitle}</b>」にいいねしました！</span>
-                              ) : notif.type === "comment" ? (
-                                <span> さんがあなたの曲「<b className="text-indigo-600">{songTitle}</b>」にコメントしました</span>
+                              <span className="font-extrabold text-slate-900">{item.actor_name}</span>
+                              {item.type === "like" ? (
+                                <span> さんがあなたの曲「<b className="text-indigo-600">{item.song_title}</b>」にいいねしました！</span>
                               ) : (
-                                <span> さんがあなたのコメントに返信しました</span>
+                                <span> さんがあなたの曲「<b className="text-indigo-600">{item.song_title}</b>」にコメントしました</span>
                               )}
                             </p>
 
-                            {/* コメント抜粋 */}
-                            {notif.content && (
+                            {/* コメント本文プレビュー */}
+                            {item.content && (
                               <p className="mt-1 text-xs text-slate-600 bg-slate-100/80 rounded-xl px-2.5 py-1.5 border border-slate-200/60 line-clamp-2">
-                                “{notif.content}”
+                                “{item.content}”
                               </p>
                             )}
 
-                            <span className="text-[10px] text-slate-400 mt-1 block">
-                              {formatDate(notif.created_at)}
+                            <span className="text-[10px] text-slate-400 mt-1 block font-medium">
+                              {formatDate(item.created_at)}
                             </span>
                           </div>
 
@@ -835,7 +860,7 @@ export default function NotificationBell() {
                           {songCover && (
                             <img
                               src={songCover}
-                              alt={songTitle}
+                              alt={item.song_title}
                               className="w-11 h-11 rounded-xl object-cover shrink-0 border border-slate-200/80 shadow-2xs"
                             />
                           )}
