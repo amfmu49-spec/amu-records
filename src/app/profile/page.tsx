@@ -275,6 +275,8 @@ export default function ProfilePage() {
   const [editCoArtist1, setEditCoArtist1] = useState("");
   const [editCoArtist2, setEditCoArtist2] = useState("");
   const [editSyncedLyrics, setEditSyncedLyrics] = useState("");
+  const [editYoutubeUrl, setEditYoutubeUrl] = useState("");
+  const [editTiktokUrl, setEditTiktokUrl] = useState("");
 
   const handleDeleteSong = async (song: any) => {
     if (!user) return;
@@ -488,6 +490,8 @@ export default function ProfilePage() {
     setEditCoArtist1(song.co_artist_id_1 || "");
     setEditCoArtist2(song.co_artist_id_2 || "");
     setEditSyncedLyrics(song.synced_lyrics || "");
+    setEditYoutubeUrl(song.youtube_url || "");
+    setEditTiktokUrl(song.tiktok_url || "");
   };
 
   const handleUpdateSong = async (songId: string) => {
@@ -503,6 +507,8 @@ export default function ProfilePage() {
       co_artist_id_1: editCoArtist1 || null,
       co_artist_id_2: editCoArtist2 || null,
       synced_lyrics: editSyncedLyrics.trim() || null,
+      youtube_url: editYoutubeUrl.trim() || null,
+      tiktok_url: editTiktokUrl.trim() || null,
     };
 
     // 本人の曲のみ更新 (user_id = user.id)
@@ -513,30 +519,44 @@ export default function ProfilePage() {
       .eq("user_id", user.id);
 
     // カラム未追加時のフォールバック
-    if (error && (error.message?.includes("synced_lyrics") || error.details?.includes("synced_lyrics") || error.code === "PGRST204")) {
+    if (
+      error &&
+      (error.message?.includes("synced_lyrics") ||
+        error.message?.includes("youtube_url") ||
+        error.message?.includes("tiktok_url") ||
+        error.details?.includes("synced_lyrics") ||
+        error.code === "PGRST204")
+    ) {
       delete updatePayload.synced_lyrics;
+      delete updatePayload.youtube_url;
+      delete updatePayload.tiktok_url;
       const retry = await supabase
         .from("songs")
         .update(updatePayload)
         .eq("id", songId)
         .eq("user_id", user.id);
       error = retry.error;
-      if (!error) {
-        alert("※タイトル等は更新されましたが、タイムスタンプ歌詞カラムがSupabaseに未反映のため歌詞は除外されました。SupabaseでマイグレーションSQLを実行してください。");
-      }
     }
 
     if (error) {
       alert("更新に失敗しました: " + error.message);
     } else {
-      setMySongs(mySongs.map(s => s.id === songId ? {
-        ...s,
-        title: editTitle.trim(),
-        description: editDescription.trim(),
-        co_artist_id_1: editCoArtist1 || null,
-        co_artist_id_2: editCoArtist2 || null,
-        synced_lyrics: editSyncedLyrics.trim() || null,
-      } : s));
+      setMySongs(
+        mySongs.map((s) =>
+          s.id === songId
+            ? {
+                ...s,
+                title: editTitle.trim(),
+                description: editDescription.trim(),
+                co_artist_id_1: editCoArtist1 || null,
+                co_artist_id_2: editCoArtist2 || null,
+                synced_lyrics: editSyncedLyrics.trim() || null,
+                youtube_url: editYoutubeUrl.trim() || null,
+                tiktok_url: editTiktokUrl.trim() || null,
+              }
+            : s
+        )
+      );
       setEditingSongId(null);
       alert("楽曲情報を更新しました！");
     }
@@ -1200,6 +1220,33 @@ export default function ProfilePage() {
                         </div>
                       </div>
 
+                      {/* 動画・SNSリンク編集 */}
+                      <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                        <label className="block text-xs font-bold text-slate-700">動画・SNSリンク設定 (任意)</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div>
+                            <span className="block text-[11px] text-slate-500 mb-0.5">▶ YouTube URL</span>
+                            <input
+                              type="url"
+                              value={editYoutubeUrl}
+                              onChange={e => setEditYoutubeUrl(e.target.value)}
+                              placeholder="https://youtube.com/watch?v=..."
+                              className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-200 bg-slate-50"
+                            />
+                          </div>
+                          <div>
+                            <span className="block text-[11px] text-slate-500 mb-0.5">🎵 TikTok URL</span>
+                            <input
+                              type="url"
+                              value={editTiktokUrl}
+                              onChange={e => setEditTiktokUrl(e.target.value)}
+                              placeholder="https://tiktok.com/@... または vt.tiktok.com/..."
+                              className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-200 bg-slate-50"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="flex items-center gap-2 pt-2">
                         <button onClick={() => handleUpdateSong(song.id)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-colors">
                           保存
@@ -1237,6 +1284,30 @@ export default function ProfilePage() {
                         )}
                         {song.description && (
                           <p className="text-xs text-slate-500 mt-1 line-clamp-2">{song.description}</p>
+                        )}
+                        {(song.youtube_url || song.tiktok_url) && (
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            {song.youtube_url && (
+                              <a
+                                href={song.youtube_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+                              >
+                                <span>▶</span> YouTube
+                              </a>
+                            )}
+                            {song.tiktok_url && (
+                              <a
+                                href={song.tiktok_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+                              >
+                                <span>🎵</span> TikTok
+                              </a>
+                            )}
+                          </div>
                         )}
                         <p className="text-[10px] text-slate-400 mt-2">{new Date(song.created_at).toLocaleDateString()}</p>
                       </div>

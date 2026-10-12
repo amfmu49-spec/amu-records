@@ -12,6 +12,8 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [syncedLyrics, setSyncedLyrics] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [tiktokUrl, setTiktokUrl] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [message, setMessage] = useState("");
   
@@ -165,17 +167,29 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
         payload.synced_lyrics = syncedLyrics.trim();
       }
 
+      if (youtubeUrl.trim()) {
+        payload.youtube_url = youtubeUrl.trim();
+      }
+
+      if (tiktokUrl.trim()) {
+        payload.tiktok_url = tiktokUrl.trim();
+      }
+
       let { error: dbError } = await supabase.from("songs").insert([payload]);
 
-      // もし DB に synced_lyrics カラムがまだ作成されていない場合のフォールバック（自動再試行）
-      if (dbError && (dbError.message?.includes("synced_lyrics") || dbError.details?.includes("synced_lyrics") || dbError.code === "PGRST204")) {
-        console.warn("Retrying song insert without synced_lyrics column...");
+      // もし DB に新カラムがまだ作成されていない場合のフォールバック（自動再試行）
+      if (dbError && (
+        dbError.message?.includes("synced_lyrics") || 
+        dbError.message?.includes("youtube_url") || 
+        dbError.message?.includes("tiktok_url") || 
+        dbError.code === "PGRST204"
+      )) {
+        console.warn("Retrying song insert without optional columns...");
         delete payload.synced_lyrics;
+        delete payload.youtube_url;
+        delete payload.tiktok_url;
         const retry = await supabase.from("songs").insert([payload]);
         dbError = retry.error;
-        if (!dbError) {
-          alert("※楽曲はアップロードされましたが、タイムスタンプ歌詞カラム(synced_lyrics)がSupabaseに未反映のため歌詞は除外されました。SupabaseでマイグレーションSQLを実行してください。");
-        }
       }
 
       if (dbError) throw dbError;
@@ -186,6 +200,8 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
       setTitle("");
       setDescription("");
       setSyncedLyrics("");
+      setYoutubeUrl("");
+      setTiktokUrl("");
       setCoArtist1("");
       setCoArtist2("");
       router.refresh();
@@ -399,6 +415,47 @@ export default function UploadForm({ userId, profile }: { userId: string, profil
               placeholder={`[00:12.50] 歌詞のテキスト\n[00:18.00] 次のフレーズ\n[00:24.30] サビの盛り上がり...`}
               disabled={isUploading}
             />
+          </div>
+
+          {/* YouTube / TikTok リンク（任意） */}
+          <div className="bg-slate-50/80 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <label className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <span>🎬</span>
+                <span>動画・SNSリンク (任意)</span>
+              </label>
+              <span className="text-[11px] text-slate-400">リンクを設定すると楽曲ページ等にボタンが表示されます</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <span className="text-red-600 font-black">▶</span> YouTube URL
+                </label>
+                <input
+                  type="url"
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  placeholder="https://youtube.com/watch?v=..."
+                  className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white"
+                  disabled={isUploading}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <span className="font-black text-slate-900">🎵</span> TikTok URL
+                </label>
+                <input
+                  type="url"
+                  value={tiktokUrl}
+                  onChange={(e) => setTiktokUrl(e.target.value)}
+                  placeholder="https://www.tiktok.com/@user/video/... または vt.tiktok.com/..."
+                  className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white"
+                  disabled={isUploading}
+                />
+              </div>
+            </div>
           </div>
 
           <button 
