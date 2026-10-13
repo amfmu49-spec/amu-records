@@ -239,6 +239,11 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     isLiveModeRef.current = isLiveMode;
   }, [isLiveMode]);
 
+  const isPlayingRef = useRef(false);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
   // Web Audio API による大ホールリバーブの初期化
   const initWebAudio = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -259,6 +264,13 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
 
       const ctx = new AudioContextClass();
       audioContextRef.current = ctx;
+
+      // 再生中にコンテキストが中断（バックグラウンド・割り込み等）されたら自動で復帰させる
+      ctx.onstatechange = () => {
+        if (ctx.state !== "running" && isPlayingRef.current) {
+          ctx.resume().catch(() => {});
+        }
+      };
 
       // Deck A & B のソースを作成（※各要素につき1回のみ実行）
       const sourceA = ctx.createMediaElementSource(audioA);
@@ -746,11 +758,12 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       const DURATION_MS = 3000; // 3.0秒間の滑らかなフェード
       const STEPS = 60; // 50msごとに滑らかに更新
       const stepInterval = DURATION_MS / STEPS;
-      let step = 0;
+      // バックグラウンド時はタイマー間引きでフェードが終わらず無音になるため即時切り替え
+      const isBackground = typeof document !== "undefined" && document.hidden;
+      const fadeStartTime = Date.now();
 
-      fadeIntervalRef.current = setInterval(() => {
-        step++;
-        const ratio = Math.min(1, step / STEPS);
+      const fadeTick = () => {
+        const ratio = isBackground ? 1 : Math.min(1, (Date.now() - fadeStartTime) / DURATION_MS);
 
         // DJミキサー等で使われるEqual Power Curve (cos/sin) で音量の谷間を防止
         const outVolume = Math.max(0, Math.cos(ratio * 0.5 * Math.PI));
@@ -763,7 +776,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
           try { nextAudio.volume = inVolume; } catch {}
         }
 
-        if (step >= STEPS) {
+        if (ratio >= 1) {
           clearInterval(fadeIntervalRef.current);
           fadeIntervalRef.current = null;
 
@@ -800,7 +813,9 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
             }
           }, 1500);
         }
-      }, stepInterval);
+      };
+      fadeIntervalRef.current = setInterval(fadeTick, stepInterval);
+      if (isBackground) fadeTick();
     };
 
     const onPlaying = () => {
@@ -854,7 +869,20 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       }
       nextAudio.volume = 1;
       nextAudio.currentTime = 0;
-      nextAudio.play().catch((e) => console.warn("Next play error:", e));
+      nextAudio.play().catch((e) => {
+        console.warn("Next play error:", e);
+        // iOS等：バックグラウンドでは別の<audio>要素の再生が拒否されることがあるため、
+        // 再生許可済みの同じ要素に次の曲を読み込んで継続再生する
+        if (currentAudio && currentAudio !== nextAudio) {
+          try {
+            currentAudio.src = audioUrlToPlay;
+            currentAudio.volume = 1;
+            currentAudio.currentTime = 0;
+            activeDeckRef.current = currentDeck;
+            currentAudio.play().catch(() => {});
+          } catch {}
+        }
+      });
 
       if (isLiveModeRef.current) {
         initWebAudio();
@@ -923,11 +951,12 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       const DURATION_MS = 1000; // 手動スキップ時はキビキビとした1.0秒フェード
       const STEPS = 20; // 50msごとに更新
       const stepInterval = DURATION_MS / STEPS;
-      let step = 0;
+      // バックグラウンド時はタイマー間引きでフェードが終わらず無音になるため即時切り替え
+      const isBackground = typeof document !== "undefined" && document.hidden;
+      const fadeStartTime = Date.now();
 
-      fadeIntervalRef.current = setInterval(() => {
-        step++;
-        const ratio = Math.min(1, step / STEPS);
+      const fadeTick = () => {
+        const ratio = isBackground ? 1 : Math.min(1, (Date.now() - fadeStartTime) / DURATION_MS);
 
         const outVolume = Math.max(0, Math.cos(ratio * 0.5 * Math.PI));
         const inVolume = Math.min(1, Math.sin(ratio * 0.5 * Math.PI));
@@ -939,7 +968,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
           try { nextAudio.volume = inVolume; } catch {}
         }
 
-        if (step >= STEPS) {
+        if (ratio >= 1) {
           clearInterval(fadeIntervalRef.current);
           fadeIntervalRef.current = null;
 
@@ -976,7 +1005,9 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
             }
           }, 1500);
         }
-      }, stepInterval);
+      };
+      fadeIntervalRef.current = setInterval(fadeTick, stepInterval);
+      if (isBackground) fadeTick();
     };
 
     const onPlaying = () => {
@@ -1168,7 +1199,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
             }
 
             // ランダム再生中 & 曲の残り3.5秒以下で3.0秒間の滑らかな自動クロスフェード開始
-            if (isRandomRef.current && !isFadingRef.current) {
+            // ※バックグラウンド中はタイマー間引きでクロスフェードが破綻するため行わず、曲終了時に切り替える
+            if (isRandomRef.current && !isFadingRef.current && !(typeof document !== "undefined" && document.hidden)) {
               const timeLeft = audio.duration - audio.currentTime;
               if (timeLeft <= 3.5 && timeLeft > 0.5) {
                 if (nextSongRef.current) {
@@ -1262,17 +1294,76 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
           {
             src: currentSong.cover_url || "/logo.png",
             sizes: "512x512",
-            type: "image/png",
           },
         ],
       });
 
-      navigator.mediaSession.setActionHandler("play", () => togglePlay());
-      navigator.mediaSession.setActionHandler("pause", () => togglePlay());
-      navigator.mediaSession.setActionHandler("nexttrack", () => playNextSong());
-      navigator.mediaSession.setActionHandler("previoustrack", () => playPrevSong());
+      const safeSetHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+        try {
+          navigator.mediaSession.setActionHandler(action, handler);
+        } catch {}
+      };
+
+      // 再生 / 一時停止は「現在の実際の状態」を見て冪等に動作させる（ロック画面操作のズレ防止）
+      safeSetHandler("play", () => {
+        const ctx = audioContextRef.current;
+        if (ctx && ctx.state !== "running") ctx.resume().catch(() => {});
+        if (!isPlayingRef.current) togglePlay();
+      });
+      safeSetHandler("pause", () => {
+        if (isPlayingRef.current) togglePlay();
+      });
+      safeSetHandler("nexttrack", () => playNextSong());
+      safeSetHandler("previoustrack", () => playPrevSong());
+      safeSetHandler("seekto", (details) => {
+        if (typeof details.seekTime === "number") seekTo(details.seekTime);
+      });
     }
-  }, [currentSong, togglePlay, playNextSong, playPrevSong]);
+  }, [currentSong, togglePlay, playNextSong, playPrevSong, seekTo]);
+
+  // ロック画面・通知の再生状態と再生位置を同期
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    try {
+      navigator.mediaSession.playbackState = currentSong ? (isPlaying ? "playing" : "paused") : "none";
+      if (currentSong && duration > 0 && isFinite(duration)) {
+        navigator.mediaSession.setPositionState({
+          duration,
+          playbackRate: 1,
+          position: Math.min(Math.max(0, currentTime), duration),
+        });
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, currentSong, duration]);
+
+  // バックグラウンド再生の安定化
+  // - iOS Safari: オーディオセッションを「再生」扱いにして画面ロック・バックグラウンドでも継続
+  // - Web Audio(AudioContext)が中断/サスペンドされたら自動で復帰
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    try {
+      const audioSession = (navigator as any).audioSession;
+      if (audioSession) audioSession.type = "playback";
+    } catch {}
+
+    const handleVisibility = () => {
+      const ctx = audioContextRef.current;
+      if (ctx && ctx.state !== "running" && isPlayingRef.current) {
+        ctx.resume().catch(() => {});
+      }
+      if (!document.hidden) {
+        // フォアグラウンド復帰時：UIの再生状態を実際のオーディオ要素に同期
+        const audio = activeDeckRef.current === "A" ? audioRefA.current : audioRefB.current;
+        if (audio && audio.src) {
+          setIsPlaying(!audio.paused);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
 
   const displayProgress = isDragging ? dragProgress : progress;
 
