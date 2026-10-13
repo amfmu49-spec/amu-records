@@ -24,7 +24,7 @@ export default function SongDetailHero({
   currentUserId,
   commentCount = 0,
 }: SongDetailHeroProps) {
-  const { playSong, currentSong, isPlaying } = useAudioPlayer();
+  const { playSong, currentSong, isPlaying, isLiveMode, toggleLiveMode } = useAudioPlayer();
   const supabase = createClient();
 
   useEffect(() => {
@@ -281,6 +281,22 @@ export default function SongDetailHero({
                   楽曲を再生
                 </>
               )}
+            </button>
+
+            {/* LIVEモード切り替えボタン */}
+            <button
+              type="button"
+              onClick={toggleLiveMode}
+              title={isLiveMode ? "LIVEモードON（ホール音響＆歓声）" : "LIVEモードを起動（ホール音響＆歓声）"}
+              className={`px-4 sm:px-5 py-4 rounded-full font-black text-sm flex items-center gap-2 border transition-all active:scale-95 select-none cursor-pointer ${
+                isLiveMode
+                  ? "bg-gradient-to-r from-red-600 via-rose-600 to-purple-600 text-white border-transparent shadow-lg shadow-rose-500/30 ring-2 ring-rose-400/50"
+                  : "bg-white/10 hover:bg-white/20 border-white/15 text-white"
+              }`}
+            >
+              <span className={`w-2.5 h-2.5 rounded-full ${isLiveMode ? "bg-white animate-pulse" : "bg-slate-400"}`} />
+              <span>LIVEモード</span>
+              {isLiveMode && <span>🏟️</span>}
             </button>
 
             {/* いいねボタン（サポーターランク色に対応） */}

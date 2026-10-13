@@ -23,6 +23,9 @@ type AudioPlayerContextType = {
   isCrossfading: boolean;
   currentTime: number;
   duration: number;
+  isLiveMode: boolean;
+  toggleLiveMode: () => void;
+  triggerCheer: () => void;
   supporterRankInfo: SupporterRankInfo;
   refreshSupporterRank: () => Promise<void>;
   playSong: (song: Song, playlist?: any[]) => void;
@@ -41,6 +44,9 @@ const AudioPlayerContext = createContext<AudioPlayerContextType>({
   isPlaying: false,
   isRandom: false,
   isCrossfading: false,
+  isLiveMode: false,
+  toggleLiveMode: () => {},
+  triggerCheer: () => {},
   currentTime: 0,
   duration: 0,
   supporterRankInfo: calculateSupporterRank([]),
@@ -57,6 +63,54 @@ const AudioPlayerContext = createContext<AudioPlayerContextType>({
 });
 
 export const useAudioPlayer = () => useContext(AudioPlayerContext);
+
+// LIVEモード 歓声バリエーションリスト（毎回違ったライブ音響）
+export const LIVE_CHEERS = [
+  { id: "stadium", name: "スタジアム熱狂歓声", src: "/sounds/live/cheer_stadium.mp3" },
+  { id: "loud", name: "大歓声＆拍手", src: "/sounds/live/cheer_loud.mp3" },
+  { id: "whistle", name: "ホイッスル＆歓声", src: "/sounds/live/cheer_whistle.mp3" },
+  { id: "applause", name: "熱烈な拍手喝采", src: "/sounds/live/cheer_applause.mp3" },
+  { id: "excited", name: "ハイテンション歓声", src: "/sounds/live/cheer_excited.mp3" },
+];
+
+/**
+ * Web Audio API 用の広大なコンサートホール・スタジアム合成インパルスレスポンス
+ */
+function createHallImpulse(ctx: AudioContext, duration = 2.8, decay = 3.0): AudioBuffer {
+  const sampleRate = ctx.sampleRate;
+  const length = Math.floor(sampleRate * duration);
+  const impulse = ctx.createBuffer(2, length, sampleRate);
+  const left = impulse.getChannelData(0);
+  const right = impulse.getChannelData(1);
+
+  // 初期反射パルス（大ホールの壁・反響板からの初期反射）
+  const reflections = [
+    { delay: 0.016, gain: 0.65, pan: -0.4 },
+    { delay: 0.029, gain: 0.55, pan: 0.5 },
+    { delay: 0.043, gain: 0.45, pan: -0.3 },
+    { delay: 0.062, gain: 0.38, pan: 0.35 },
+    { delay: 0.088, gain: 0.32, pan: -0.2 },
+    { delay: 0.115, gain: 0.28, pan: 0.25 },
+  ];
+
+  for (const r of reflections) {
+    const idx = Math.floor(r.delay * sampleRate);
+    if (idx < length) {
+      left[idx] += r.gain * (1 - r.pan * 0.5);
+      right[idx] += r.gain * (1 + r.pan * 0.5);
+    }
+  }
+
+  // 後期残響（指数関数的減衰ノイズ＋ステレオ拡散）
+  for (let i = 0; i < length; i++) {
+    const t = i / length;
+    const envelope = Math.pow(1 - t, decay);
+    left[i] += (Math.random() * 2 - 1) * envelope * 0.6;
+    right[i] += (Math.random() * 2 - 1) * envelope * 0.6;
+  }
+
+  return impulse;
+}
 
 // 秒数を mm:ss 形式に整形
 const formatTime = (seconds: number) => {
@@ -136,6 +190,212 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
   useEffect(() => {
     playlistRef.current = playlist;
   }, [playlist]);
+
+  // --- LIVEモード（大ホールリバーブ ＆ 演奏開始歓声） ---
+  const [isLiveMode, setIsLiveMode] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("amu_live_mode") === "true";
+      } catch {}
+    }
+    return false;
+  });
+  const isLiveModeRef = useRef<boolean>(isLiveMode);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const wetGainRef = useRef<GainNode | null>(null);
+  const dryGainRef = useRef<GainNode | null>(null);
+  const isWebAudioConnectedRef = useRef(false);
+
+  // 歓声（Cheering）関連のRefと状態
+  const lastCheerIdRef = useRef<string | null>(null);
+  const cheerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const cheerFadeIntervalRef = useRef<any>(null);
+  const [currentCheerToast, setCurrentCheerToast] = useState<{ name: string; id: string } | null>(null);
+
+  useEffect(() => {
+    isLiveModeRef.current = isLiveMode;
+  }, [isLiveMode]);
+
+  // Web Audio API による大ホールリバーブの初期化
+  const initWebAudio = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (isWebAudioConnectedRef.current && audioContextRef.current) {
+      if (audioContextRef.current.state === "suspended") {
+        audioContextRef.current.resume().catch(() => {});
+      }
+      return;
+    }
+
+    const audioA = audioRefA.current;
+    const audioB = audioRefB.current;
+    if (!audioA || !audioB) return;
+
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      const ctx = new AudioContextClass();
+      audioContextRef.current = ctx;
+
+      // Deck A & B のソースを作成（※各要素につき1回のみ実行）
+      const sourceA = ctx.createMediaElementSource(audioA);
+      const sourceB = ctx.createMediaElementSource(audioB);
+
+      // 入力マージ
+      const inputMerger = ctx.createGain();
+      sourceA.connect(inputMerger);
+      sourceB.connect(inputMerger);
+
+      // 原音（Dry）ライン
+      const dryGain = ctx.createGain();
+      dryGain.gain.value = isLiveModeRef.current ? 0.82 : 1.0;
+      dryGainRef.current = dryGain;
+      inputMerger.connect(dryGain);
+      dryGain.connect(ctx.destination);
+
+      // リバーブ（Wet）ライン: 3.8kHz LPF -> Convolver -> wetGain -> destination
+      const preFilter = ctx.createBiquadFilter();
+      preFilter.type = "lowpass";
+      preFilter.frequency.value = 3800; // ホールの空気・反響板による高域吸収
+      preFilter.Q.value = 0.7;
+
+      const convolver = ctx.createConvolver();
+      convolver.buffer = createHallImpulse(ctx, 2.8, 3.0);
+
+      const wetGain = ctx.createGain();
+      wetGain.gain.value = isLiveModeRef.current ? 0.52 : 0;
+      wetGainRef.current = wetGain;
+
+      inputMerger.connect(preFilter);
+      preFilter.connect(convolver);
+      convolver.connect(wetGain);
+      wetGain.connect(ctx.destination);
+
+      isWebAudioConnectedRef.current = true;
+
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(() => {});
+      }
+    } catch (err) {
+      console.warn("Web Audio Reverb init fallback:", err);
+    }
+  }, []);
+
+  // リバーブの音量を滑らかに切り替え（クリックノイズなし）
+  const updateReverbState = useCallback((liveActive: boolean) => {
+    const ctx = audioContextRef.current;
+    if (!ctx) return;
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+
+    const now = ctx.currentTime;
+    if (dryGainRef.current) {
+      dryGainRef.current.gain.setTargetAtTime(liveActive ? 0.82 : 1.0, now, 0.08);
+    }
+    if (wetGainRef.current) {
+      wetGainRef.current.gain.setTargetAtTime(liveActive ? 0.52 : 0.0, now, 0.08);
+    }
+  }, []);
+
+  // 歓声SEの再生（毎回異なるバリエーションからランダム選出）
+  const playLiveCheer = useCallback((isSongStart = true) => {
+    if (typeof window === "undefined") return;
+
+    // 前回の歓声と被らないようにランダム選択
+    const candidates = LIVE_CHEERS.filter((c) => c.id !== lastCheerIdRef.current);
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)] || LIVE_CHEERS[0];
+    lastCheerIdRef.current = chosen.id;
+
+    // トースト通知を表示（3.2秒間）
+    setCurrentCheerToast({ name: chosen.name, id: chosen.id });
+    setTimeout(() => {
+      setCurrentCheerToast((prev) => (prev?.id === chosen.id ? null : prev));
+    }, 3200);
+
+    // 以前の歓声再生をクリア
+    if (cheerFadeIntervalRef.current) {
+      clearInterval(cheerFadeIntervalRef.current);
+      cheerFadeIntervalRef.current = null;
+    }
+    if (cheerAudioRef.current) {
+      try {
+        cheerAudioRef.current.pause();
+        cheerAudioRef.current.currentTime = 0;
+      } catch {}
+    }
+
+    try {
+      const audio = new Audio(chosen.src);
+      cheerAudioRef.current = audio;
+      audio.volume = 0.65;
+      audio.currentTime = 0;
+
+      const p = audio.play();
+      if (p !== undefined) {
+        p.catch((e) => console.warn("Live cheer play note:", e));
+      }
+
+      // 演奏開始時：2.5秒間しっかり会場が沸き立ち、その後3秒かけて演奏に溶け込むように自然にフェードアウト！
+      if (isSongStart) {
+        const holdMs = 2500;
+        const fadeMs = 3000;
+        const steps = 30;
+        const stepInterval = fadeMs / steps;
+
+        setTimeout(() => {
+          let step = 0;
+          cheerFadeIntervalRef.current = setInterval(() => {
+            step++;
+            const ratio = 1 - step / steps;
+            if (audio) {
+              audio.volume = Math.max(0, 0.65 * ratio);
+            }
+            if (step >= steps) {
+              clearInterval(cheerFadeIntervalRef.current);
+              cheerFadeIntervalRef.current = null;
+              try { audio.pause(); } catch {}
+            }
+          }, stepInterval);
+        }, holdMs);
+      }
+    } catch (e) {
+      console.warn("Cheer audio play error:", e);
+    }
+  }, []);
+
+  // LIVEモードのON/OFF切り替え
+  const toggleLiveMode = useCallback(() => {
+    setIsLiveMode((prev) => {
+      const next = !prev;
+      isLiveModeRef.current = next;
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("amu_live_mode", String(next));
+        } catch {}
+      }
+
+      initWebAudio();
+      updateReverbState(next);
+
+      // LIVEモードをONにした瞬間に曲が再生中なら、即座に歓声も入れて盛り上げる！
+      if (next) {
+        playLiveCheer(true);
+      } else {
+        // OFFにした時は鳴っている歓声も止める
+        if (cheerAudioRef.current) {
+          try { cheerAudioRef.current.pause(); } catch {}
+        }
+      }
+      return next;
+    });
+  }, [initWebAudio, updateReverbState, playLiveCheer]);
+
+  // 手動で歓声を送る（ライブ中にペンライトを振るような感覚）
+  const triggerCheer = useCallback(() => {
+    initWebAudio();
+    playLiveCheer(false);
+  }, [initWebAudio, playLiveCheer]);
 
   // プレイヤー専用：ログインユーザー情報、現在の曲のいいね・コメント状態、サポーターランク情報
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -305,6 +565,11 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       if (fadeStarted) return;
       fadeStarted = true;
 
+      if (isLiveModeRef.current) {
+        initWebAudio();
+        playLiveCheer(true);
+      }
+
       setCurrentSong(nextSong);
       setProgress(0);
       setCurrentTime(0);
@@ -393,7 +658,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         startFading();
       }
     }, 800); // プリロードが効いていれば即座に呼ばれる
-  }, [pickNextRandomSong]);
+  }, [pickNextRandomSong, initWebAudio, playLiveCheer]);
 
   // --- 手動スキップ / 曲変更（手動時も滑らかなクロスフェード） ---
   const transitionToSong = useCallback(async (song: Song) => {
@@ -424,6 +689,11 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       nextAudio.volume = 1;
       nextAudio.currentTime = 0;
       nextAudio.play().catch((e) => console.warn("Next play error:", e));
+
+      if (isLiveModeRef.current) {
+        initWebAudio();
+        playLiveCheer(true);
+      }
 
       activeDeckRef.current = nextDeck;
       setCurrentSong(song);
@@ -470,6 +740,11 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     const startFading = () => {
       if (fadeStarted) return;
       fadeStarted = true;
+
+      if (isLiveModeRef.current) {
+        initWebAudio();
+        playLiveCheer(true);
+      }
 
       setCurrentSong(song);
       setIsPlaying(true);
@@ -560,7 +835,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         startFading();
       }
     }, 500);
-  }, [pickNextRandomSong]);
+  }, [pickNextRandomSong, initWebAudio, playLiveCheer]);
 
   // 外部からの単曲再生指示
   const playSong = useCallback((song: Song, customPlaylist?: any[]) => {
@@ -628,11 +903,18 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     if (isPlaying) {
       activeAudio.pause();
       setIsPlaying(false);
+      if (cheerAudioRef.current) {
+        try { cheerAudioRef.current.pause(); } catch {}
+      }
     } else {
       activeAudio.play().catch((e) => console.warn("Toggle play failed:", e));
       setIsPlaying(true);
+      if (isLiveModeRef.current) {
+        initWebAudio();
+        playLiveCheer(true);
+      }
     }
-  }, [currentSong, isPlaying]);
+  }, [currentSong, isPlaying, initWebAudio, playLiveCheer]);
 
   // ランダム再生モードのトグル
   const toggleRandom = useCallback(() => {
@@ -835,6 +1117,9 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         isPlaying,
         isRandom,
         isCrossfading,
+        isLiveMode,
+        toggleLiveMode,
+        triggerCheer,
         currentTime,
         duration,
         supporterRankInfo,
@@ -853,12 +1138,26 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       {children}
 
       {/* Dual Deck Audio Elements */}
-      <audio ref={audioRefA} playsInline preload="auto" />
-      <audio ref={audioRefB} playsInline preload="auto" />
+      <audio ref={audioRefA} crossOrigin="anonymous" playsInline preload="auto" />
+      <audio ref={audioRefB} crossOrigin="anonymous" playsInline preload="auto" />
 
       {/* グローバルプレイヤー（画面下部固定：太めで洗練されたデザイン） */}
       {currentSong && (
-        <div className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-2xl border-t border-slate-200/90 shadow-[0_-10px_35px_rgba(0,0,0,0.08)] z-[80] transition-all duration-300">
+        <div className={`fixed bottom-0 left-0 w-full backdrop-blur-2xl border-t transition-all duration-300 z-[80] ${
+          isLiveMode
+            ? "bg-slate-950/95 border-rose-500/30 shadow-[0_-10px_40px_rgba(225,29,72,0.15)] text-white"
+            : "bg-white/95 border-slate-200/90 shadow-[0_-10px_35px_rgba(0,0,0,0.08)] text-slate-900"
+        }`}>
+          {/* LIVEモード 歓声発生時のフローティングトースト演出 */}
+          {currentCheerToast && isLiveMode && (
+            <div className="absolute -top-11 left-1/2 -translate-x-1/2 bg-slate-900/95 text-white backdrop-blur-md px-3.5 py-1 rounded-full text-xs font-bold shadow-2xl flex items-center gap-1.5 border border-rose-500/60 animate-bounce z-30 pointer-events-none whitespace-nowrap">
+              <span className="text-sm">🏟️</span>
+              <span className="bg-gradient-to-r from-amber-300 via-rose-300 to-pink-300 bg-clip-text text-transparent font-black tracking-wide">
+                LIVE STAGE：{currentCheerToast.name}！
+              </span>
+            </div>
+          )}
+
           {/* 超快適シークバー（広いタップ＆ドラッグ当たり判定エリア） */}
           <div
             ref={progressBarRef}
@@ -870,19 +1169,25 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
             title="ドラッグまたはタップでシーク"
           >
             {/* シークバー本体のトラック */}
-            <div className="w-full h-1.5 sm:h-2 bg-slate-200/80 group-hover:h-2.5 transition-all relative overflow-visible">
+            <div className={`w-full h-1.5 sm:h-2 group-hover:h-2.5 transition-all relative overflow-visible ${
+              isLiveMode ? "bg-slate-800/80" : "bg-slate-200/80"
+            }`}>
               {/* 再生済みバー */}
               <div
                 className={`h-full relative ${
                   isCrossfading
                     ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 animate-pulse"
+                    : isLiveMode
+                    ? "bg-gradient-to-r from-amber-500 via-rose-500 to-purple-600 shadow-[0_0_12px_rgba(244,63,94,0.7)]"
                     : "bg-indigo-600 group-hover:bg-indigo-500"
                 }`}
                 style={{ width: `${displayProgress}%` }}
               >
                 {/* つまみ（ハンドル） */}
                 <div
-                  className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 rounded-full bg-white border-2 border-indigo-600 shadow-md transition-all ${
+                  className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 rounded-full bg-white border-2 shadow-md transition-all ${
+                    isLiveMode ? "border-rose-600 shadow-[0_0_10px_rgba(225,29,72,0.9)]" : "border-indigo-600"
+                  } ${
                     isDragging ? "w-4 h-4 scale-125" : "w-3 h-3 sm:w-3.5 sm:h-3.5 opacity-90 group-hover:opacity-100 group-hover:scale-110"
                   }`}
                 />
@@ -896,7 +1201,9 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
               {/* カバーアート（クリックで曲詳細へ） */}
               <Link
                 href={`/song/${currentSong.id}`}
-                className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl overflow-hidden bg-slate-100 shrink-0 shadow-sm border border-slate-200 relative group block active:scale-95 transition-transform"
+                className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl overflow-hidden shrink-0 shadow-sm border relative group block active:scale-95 transition-transform ${
+                  isLiveMode ? "border-rose-500/40 bg-slate-900 shadow-rose-950/40" : "border-slate-200 bg-slate-100"
+                }`}
                 title="曲詳細・歌詞を見る"
               >
                 {currentSong.cover_url ? (
@@ -907,8 +1214,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                   </div>
                 )}
                 {isPlaying && (
-                  <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                    <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
+                  <div className={`absolute inset-0 flex items-center justify-center ${isLiveMode ? "bg-rose-950/40" : "bg-black/20"}`}>
+                    <span className={`w-2.5 h-2.5 rounded-full animate-ping ${isLiveMode ? "bg-rose-400" : "bg-white"}`}></span>
                   </div>
                 )}
               </Link>
@@ -917,11 +1224,21 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <Link
                     href={`/song/${currentSong.id}`}
-                    className="font-extrabold text-slate-900 hover:text-indigo-600 transition-colors truncate text-xs sm:text-base leading-snug"
+                    className={`font-extrabold transition-colors truncate text-xs sm:text-base leading-snug ${
+                      isLiveMode ? "text-white hover:text-rose-300" : "text-slate-900 hover:text-indigo-600"
+                    }`}
                     title="曲詳細・歌詞を見る"
                   >
                     {currentSong.title}
                   </Link>
+
+                  {/* LIVE HALL モードバッジ */}
+                  {isLiveMode && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-black bg-gradient-to-r from-red-600 via-rose-600 to-purple-600 text-white shadow-sm shrink-0 tracking-wider ring-1 ring-white/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                      <span>LIVE HALL</span>
+                    </span>
+                  )}
 
                   {/* リリモ対応バッジ */}
                   {currentSong.synced_lyrics && (
@@ -943,7 +1260,9 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                   )}
                 </div>
 
-                <div className="flex items-center gap-3 text-xs font-medium text-slate-500 truncate mt-0.5">
+                <div className={`flex items-center gap-3 text-xs font-medium truncate mt-0.5 ${
+                  isLiveMode ? "text-slate-400" : "text-slate-500"
+                }`}>
                   <span className="truncate">{currentSong.artist}</span>
 
                   {/* いいね＆コメントアクションボタン群 */}
@@ -963,6 +1282,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                             : supporterRankInfo.rank === "bronze"
                             ? "bg-amber-950/10 border-[#CD7F32]/50 text-[#8a4a16]"
                             : "bg-rose-50 border-rose-200 text-rose-600"
+                          : isLiveMode
+                          ? "bg-slate-900 border-slate-700 text-slate-400 hover:text-white"
                           : "bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800"
                       }`}
                       title={currentLikes.isLiked ? "いいねを取り消す" : "いいね！"}
@@ -988,7 +1309,11 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                     {/* コメントボタン */}
                     <Link
                       href={`/song/${currentSong.id}#comments`}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-800 transition-all active:scale-95 cursor-pointer"
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border transition-all active:scale-95 cursor-pointer ${
+                        isLiveMode
+                          ? "bg-slate-900 border-slate-700 text-slate-400 hover:text-white"
+                          : "bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800"
+                      }`}
                       title="コメントを見る・投稿する"
                     >
                       <svg className="w-3.5 h-3.5 fill-none stroke-current" viewBox="0 0 24 24">
@@ -1001,13 +1326,44 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
               </div>
             </div>
 
-            {/* 再生コントロール（シャッフル・前・再生・次・時間） */}
-            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            {/* 再生コントロール（LIVE・シャッフル・前・再生・次・時間） */}
+            <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
               {/* 時間表示 */}
               {duration > 0 && (
-                <span className="text-[11px] text-slate-400 font-mono shrink-0 hidden md:inline select-none">
+                <span className={`text-[11px] font-mono shrink-0 hidden md:inline select-none ${
+                  isLiveMode ? "text-slate-400" : "text-slate-400"
+                }`}>
                   {formatTime(currentTime)} / {formatTime(duration)}
                 </span>
+              )}
+
+              {/* LIVEモード トグルボタン */}
+              <button
+                type="button"
+                onClick={toggleLiveMode}
+                title={isLiveMode ? "LIVEモード中 (ホール音響＆歓声 ON)" : "LIVEモードに切り替える (ホール音響＆歓声)"}
+                className={`relative px-2.5 sm:px-3 py-1.5 rounded-full font-black text-[10px] sm:text-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 border select-none ${
+                  isLiveMode
+                    ? "bg-gradient-to-r from-red-600 via-rose-600 to-purple-600 text-white border-transparent shadow-lg shadow-rose-500/30 ring-2 ring-rose-400/50"
+                    : "bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full shrink-0 ${isLiveMode ? "bg-white animate-pulse" : "bg-slate-400"}`} />
+                <span>LIVE</span>
+                {isLiveMode && <span className="text-[10px] hidden sm:inline">🏟️</span>}
+              </button>
+
+              {/* LIVEモード中のみ出現する「歓声を送る👏」ミニボタン */}
+              {isLiveMode && isPlaying && (
+                <button
+                  type="button"
+                  onClick={triggerCheer}
+                  title="会場に歓声・拍手を送る！"
+                  className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-500/40 active:scale-90 transition-all cursor-pointer shadow-xs select-none"
+                >
+                  <span>👏</span>
+                  <span className="hidden md:inline">歓声を送る</span>
+                </button>
               )}
 
               {/* シャッフル / ランダム再生トグルボタン */}
@@ -1018,6 +1374,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 className={`p-2 sm:p-2.5 rounded-full transition-all active:scale-95 cursor-pointer relative ${
                   isRandom
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+                    : isLiveMode
+                    ? "text-slate-400 hover:text-white hover:bg-slate-900"
                     : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
                 }`}
               >
@@ -1034,7 +1392,9 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 type="button"
                 onClick={playPrevSong}
                 title="前の曲"
-                className="hidden sm:flex p-2 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer"
+                className={`hidden sm:flex p-2 rounded-full active:scale-95 transition-all cursor-pointer ${
+                  isLiveMode ? "text-slate-400 hover:text-white hover:bg-slate-900" : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                }`}
               >
                 <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
                   <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
@@ -1046,7 +1406,11 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 type="button"
                 onClick={togglePlay}
                 title={isPlaying ? "一時停止" : "再生"}
-                className="w-11 h-11 sm:w-13 sm:h-13 flex items-center justify-center rounded-full bg-slate-900 hover:bg-slate-800 text-white active:scale-95 transition-all shadow-md shadow-slate-900/20 cursor-pointer"
+                className={`w-11 h-11 sm:w-13 sm:h-13 flex items-center justify-center rounded-full active:scale-95 transition-all shadow-md cursor-pointer ${
+                  isLiveMode
+                    ? "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30 ring-2 ring-rose-400/40"
+                    : "bg-slate-900 hover:bg-slate-800 text-white shadow-slate-900/20"
+                }`}
               >
                 {isPlaying ? (
                   <svg className="w-4 h-4 sm:w-5 sm:h-5 fill-current" viewBox="0 0 24 24">
@@ -1064,7 +1428,9 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 type="button"
                 onClick={playNextSong}
                 title="次の曲へ"
-                className="p-2 sm:p-2.5 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer"
+                className={`p-2 sm:p-2.5 rounded-full active:scale-95 transition-all cursor-pointer ${
+                  isLiveMode ? "text-slate-300 hover:text-white hover:bg-slate-900" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                }`}
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6 fill-current" viewBox="0 0 24 24">
                   <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
@@ -1074,7 +1440,11 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
               {/* 歌詞・曲詳細ボタン（右端） */}
               <Link
                 href={`/song/${currentSong.id}`}
-                className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 text-xs font-bold transition-all ml-1"
+                className={`hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ml-1 ${
+                  isLiveMode
+                    ? "bg-slate-900 hover:bg-rose-950 hover:text-rose-300 text-slate-300 border border-slate-800"
+                    : "bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700"
+                }`}
                 title="曲詳細・リリモ文字PVを見る"
               >
                 <span>歌詞・リリモ</span>
