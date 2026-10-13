@@ -29,26 +29,17 @@ interface FloatingText {
 
 const SLOT_COUNT = 40;
 
-// 曲ごとの自然な初期盛り上がり波形（サビ付近が盛り上がるシード生成）
-function generateInitialTimeline(songId: string): number[] {
-  let seed = 0;
-  for (let i = 0; i < songId.length; i++) {
-    seed = (seed * 31 + songId.charCodeAt(i)) & 0xffffff;
-  }
-  return Array.from({ length: SLOT_COUNT }, (_, i) => {
-    const progress = i / (SLOT_COUNT - 1);
-    const chorusPeak = Math.exp(-Math.pow((progress - 0.65) / 0.16, 2)) * 7;
-    const bridgePeak = Math.exp(-Math.pow((progress - 0.35) / 0.12, 2)) * 3.5;
-    const introWave = Math.sin(progress * Math.PI * 2) * 1.5;
-    const variance = ((seed + i * 19) % 7) * 0.4;
-    return Math.max(1, Math.round(2 + chorusPeak + bridgePeak + introWave + variance));
-  });
+// 初期タイムライン（デモ波形は完全撤廃し、最初はすべて0のフラットな状態からスタート）
+function generateInitialTimeline(): number[] {
+  return new Array(SLOT_COUNT).fill(0);
 }
 
-// Catmull-Rom スプライン補間による滑らかな折れ線・エリアパス生成
+// Catmull-Rom スプライン補間による滑らかな折れ線・エリアパス生成（実際のブーストデータのみ描画）
 function generateWavePaths(data: number[], width = 400, height = 44) {
-  if (!data || data.length === 0) return { linePath: "", areaPath: "", peakIndex: 0, points: [] };
-  const maxVal = Math.max(...data, 10);
+  if (!data || data.length === 0) return { linePath: "", areaPath: "", peakIndex: -1, points: [], hasData: false };
+  const rawMax = Math.max(...data, 0);
+  const hasData = rawMax > 0;
+  const maxVal = Math.max(rawMax, 10);
   const paddingBottom = 4;
   const paddingTop = 6;
   const availableH = height - paddingTop - paddingBottom;
@@ -60,14 +51,16 @@ function generateWavePaths(data: number[], width = 400, height = 44) {
     return { x, y };
   });
 
-  let peakIndex = 0;
-  let maxV = -1;
-  data.forEach((v, i) => {
-    if (v > maxV) {
-      maxV = v;
-      peakIndex = i;
-    }
-  });
+  let peakIndex = -1;
+  if (hasData) {
+    let maxV = 0;
+    data.forEach((v, i) => {
+      if (v > maxV) {
+        maxV = v;
+        peakIndex = i;
+      }
+    });
+  }
 
   let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
   for (let i = 0; i < points.length - 1; i++) {
@@ -87,7 +80,7 @@ function generateWavePaths(data: number[], width = 400, height = 44) {
   const linePath = d;
   const areaPath = `${d} L ${width} ${height} L 0 ${height} Z`;
 
-  return { linePath, areaPath, peakIndex, points };
+  return { linePath, areaPath, peakIndex, points, hasData };
 }
 
 export default function LiveStagePage() {
@@ -163,16 +156,16 @@ export default function LiveStagePage() {
       setTotalBoosts(0);
     }
 
-    // タイムラインヒートマップの復元
+    // タイムラインヒートマップの復元（デモ波形は完全排除し、実ブーストデータのみ管理）
     try {
-      const savedTl = localStorage.getItem(`amu_live_song_timeline_${currentSong.id}`);
+      const savedTl = localStorage.getItem(`amu_live_song_timeline_real_${currentSong.id}`);
       if (savedTl) {
         setTimelineData(JSON.parse(savedTl));
       } else {
-        setTimelineData(generateInitialTimeline(currentSong.id));
+        setTimelineData(generateInitialTimeline());
       }
     } catch {
-      setTimelineData(generateInitialTimeline(currentSong.id));
+      setTimelineData(generateInitialTimeline());
     }
 
     // 楽曲が始まったら歓声で会場が沸き立ちフェードアウト！
@@ -234,13 +227,13 @@ export default function LiveStagePage() {
       const slotIdx = Math.min(SLOT_COUNT - 1, Math.max(0, Math.floor(progressRatio * SLOT_COUNT)));
 
       setTimelineData((prev) => {
-        const next = prev.length === SLOT_COUNT ? [...prev] : generateInitialTimeline(currentSong.id);
+        const next = prev.length === SLOT_COUNT ? [...prev] : generateInitialTimeline();
         next[slotIdx] = (next[slotIdx] || 0) + 1;
         // 隣接スロットにも熱気（山）を少し伝播して滑らかな山にする
         if (slotIdx > 0) next[slotIdx - 1] = (next[slotIdx - 1] || 0) + 0.35;
         if (slotIdx < SLOT_COUNT - 1) next[slotIdx + 1] = (next[slotIdx + 1] || 0) + 0.35;
         try {
-          localStorage.setItem(`amu_live_song_timeline_${currentSong.id}`, JSON.stringify(next));
+          localStorage.setItem(`amu_live_song_timeline_real_${currentSong.id}`, JSON.stringify(next));
         } catch {}
         return next;
       });
@@ -251,10 +244,8 @@ export default function LiveStagePage() {
     if (newCombo > maxCombo) setMaxCombo(newCombo);
     resetComboTimer();
 
-    // 2. 画面シェイク＆ステージフラッシュ
-    setIsScreenShaking(true);
+    // 2. ステージフラッシュ（画面揺れは完全排除しUIをピタッと固定）
     setIsStageFlashing(true);
-    setTimeout(() => setIsScreenShaking(false), 200);
     setTimeout(() => setIsStageFlashing(false), 120);
 
     // 3. クリック／タップ座標の取得
@@ -415,9 +406,7 @@ export default function LiveStagePage() {
   return (
     <div
       onPointerDown={handleBoost}
-      className={`relative w-full min-h-[100dvh] h-[100dvh] overflow-hidden bg-black select-none text-white flex flex-col justify-between cursor-pointer ${
-        isScreenShaking ? "animate-[wiggle_0.2s_ease-in-out]" : ""
-      }`}
+      className="relative w-full min-h-[100dvh] h-[100dvh] overflow-hidden bg-black select-none text-white flex flex-col justify-between cursor-pointer"
     >
       {/* 1. 客席後方から見たライブステージ背景画像 */}
       <div
@@ -525,82 +514,87 @@ export default function LiveStagePage() {
         </div>
       </div>
 
-      {/* ────────── [中央セクション] 画面タップ連打ライブ空間 ＆ コンボ ＆ おしゃれなBOOST HUD ────────── */}
+      {/* ────────── [中央セクション] 画面タップ連打ライブ空間 ＆ 完全固定BOOST HUD ────────── */}
       <div className="relative z-30 flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto px-4 my-auto min-h-0 pointer-events-none">
-        {/* 歓声トースト演出（日本人オーディエンスの歓声が発生した時） */}
-        {currentCheerToast && (
-          <div className="mb-2 px-3.5 py-1 rounded-full bg-slate-900/95 border border-rose-500/60 shadow-xl backdrop-blur-md animate-bounce text-[11px] sm:text-xs font-bold text-rose-300 flex items-center gap-1.5">
-            <span>👏</span>
-            <span>{currentCheerToast.name}！</span>
-          </div>
-        )}
-
-        {/* コンボインジケーター（画面どこでも連打すると出現！） */}
-        {combo > 0 && (
-          <div className="mb-3 flex flex-col items-center animate-[bounce_0.4s_ease-out]">
-            {comboBadge && (
-              <span
-                className={`text-[10px] sm:text-xs font-black px-3.5 py-0.5 rounded-full bg-gradient-to-r ${comboBadge.color} text-white shadow-lg shadow-rose-500/40 uppercase tracking-widest mb-1 animate-pulse`}
-              >
-                {comboBadge.title}
-              </span>
-            )}
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-3xl sm:text-5xl font-black font-mono tracking-tight bg-gradient-to-r from-amber-300 via-rose-300 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(244,63,94,0.9)]">
-                {combo}
-              </span>
-              <span className="text-sm sm:text-lg font-black text-white tracking-widest drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
-                COMBO!
-              </span>
+        {/* 歓声トースト演出（日本人オーディエンスの歓声が発生した時：BOOST表示を押し下げない固定高領域） */}
+        <div className="h-8 flex items-center justify-center mb-1">
+          {currentCheerToast && (
+            <div className="px-3.5 py-1 rounded-full bg-slate-900/95 border border-rose-500/60 shadow-xl backdrop-blur-md animate-bounce text-[11px] sm:text-xs font-bold text-rose-300 flex items-center gap-1.5">
+              <span>👏</span>
+              <span>{currentCheerToast.name}！</span>
             </div>
-          </div>
-        )}
-
-        {/* ★ この曲の総ブースト数：超おしゃれなネオンHUDスタイル */}
-        <div
-          onPointerDown={(e) => e.stopPropagation()}
-          className="relative group flex items-center gap-3.5 px-5 sm:px-6 py-2.5 rounded-2xl bg-black/75 border border-rose-500/40 backdrop-blur-xl shadow-[0_0_35px_rgba(244,63,94,0.3)] pointer-events-auto transition-transform active:scale-95"
-        >
-          {/* ネオンパルスライト */}
-          <div className="relative flex items-center justify-center">
-            <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping opacity-75 absolute" />
-            <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-amber-400 to-rose-500 shadow-md shadow-rose-500" />
-          </div>
-
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[9px] font-mono font-black tracking-[0.22em] text-rose-300/80 uppercase">
-                STAGE HEAT ENERGY
-              </span>
-              <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                LIVE
-              </span>
-            </div>
-            <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight bg-gradient-to-r from-amber-200 via-rose-300 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(244,63,94,0.7)]">
-                {totalBoosts.toLocaleString()}
-              </span>
-              <span className="text-[10px] font-black tracking-widest text-amber-300 font-mono">
-                BOOSTS
-              </span>
-            </div>
-          </div>
-
-          {/* セパレーター */}
-          <div className="h-7 w-px bg-gradient-to-b from-transparent via-rose-500/40 to-transparent mx-0.5" />
-
-          {/* 連打アイコン */}
-          <div className="flex flex-col items-center">
-            <span className="text-lg filter drop-shadow-[0_0_8px_rgba(251,191,36,0.8)] animate-pulse">
-              🔥
-            </span>
-          </div>
+          )}
         </div>
 
-        {/* 画面連打ガイドヒント */}
-        <div className="mt-3.5 text-[11px] sm:text-xs font-bold text-white/50 tracking-wider flex items-center gap-1.5 animate-pulse pointer-events-none select-none">
-          <span>👆</span>
-          <span>画面のどこでも連打してライブを盛り上げよう！</span>
+        {/* ★ 完全固定アンカーコンテナ（コンボやトーストで上下に動くのを100%防止） */}
+        <div className="relative flex flex-col items-center">
+          {/* コンボインジケーター：BOOST表示の直上に絶対配置で浮遊（BOOST表示の位置を一切動かさない！） */}
+          {combo > 0 && (
+            <div className="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none whitespace-nowrap animate-[fadeIn_0.15s_ease-out]">
+              {comboBadge && (
+                <span
+                  className={`text-[10px] sm:text-xs font-black px-3.5 py-0.5 rounded-full bg-gradient-to-r ${comboBadge.color} text-white shadow-lg shadow-rose-500/40 uppercase tracking-widest mb-1 animate-pulse`}
+                >
+                  {comboBadge.title}
+                </span>
+              )}
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl sm:text-5xl font-black font-mono tracking-tight bg-gradient-to-r from-amber-300 via-rose-300 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(244,63,94,0.9)]">
+                  {combo}
+                </span>
+                <span className="text-sm sm:text-lg font-black text-white tracking-widest drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+                  COMBO!
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ★ この曲の総ブースト数HUD：ピタッと完全固定（active:scale-95やtransition-transformを排除！） */}
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            className="relative flex items-center gap-3.5 px-5 sm:px-6 py-2.5 rounded-2xl bg-black/75 border border-rose-500/40 backdrop-blur-xl shadow-[0_0_35px_rgba(244,63,94,0.3)] pointer-events-auto select-none"
+          >
+            {/* ネオンパルスライト */}
+            <div className="relative flex items-center justify-center">
+              <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping opacity-75 absolute" />
+              <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-amber-400 to-rose-500 shadow-md shadow-rose-500" />
+            </div>
+
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] font-mono font-black tracking-[0.22em] text-rose-300/80 uppercase">
+                  STAGE HEAT ENERGY
+                </span>
+                <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                  LIVE
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight bg-gradient-to-r from-amber-200 via-rose-300 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(244,63,94,0.7)]">
+                  {totalBoosts.toLocaleString()}
+                </span>
+                <span className="text-[10px] font-black tracking-widest text-amber-300 font-mono">
+                  BOOSTS
+                </span>
+              </div>
+            </div>
+
+            {/* セパレーター */}
+            <div className="h-7 w-px bg-gradient-to-b from-transparent via-rose-500/40 to-transparent mx-0.5" />
+
+            {/* 連打アイコン */}
+            <div className="flex flex-col items-center">
+              <span className="text-lg filter drop-shadow-[0_0_8px_rgba(251,191,36,0.8)] animate-pulse">
+                🔥
+              </span>
+            </div>
+          </div>
+
+          {/* 画面連打ガイドヒント */}
+          <div className="mt-3.5 text-[11px] sm:text-xs font-bold text-white/50 tracking-wider flex items-center gap-1.5 animate-pulse pointer-events-none select-none">
+            <span>👆</span>
+            <span>画面のどこでも連打してライブを盛り上げよう！</span>
+          </div>
         </div>
       </div>
 
@@ -681,8 +675,8 @@ export default function LiveStagePage() {
               )}
             </svg>
 
-            {/* 最大盛り上がり地点（PEAK）マーカー */}
-            {waveData.points && waveData.points[waveData.peakIndex] && (
+            {/* 最大盛り上がり地点（PEAK）マーカー（実際にブーストされた箇所がある場合のみ表示） */}
+            {waveData.hasData && waveData.peakIndex >= 0 && waveData.points && waveData.points[waveData.peakIndex] && (
               <div
                 className="absolute pointer-events-none transform -translate-x-1/2 flex flex-col items-center z-10"
                 style={{
