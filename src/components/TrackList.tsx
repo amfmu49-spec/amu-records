@@ -128,8 +128,18 @@ export default function TrackList({
                 onClick={() => playSong({ id: song.id, title: song.title, file_url: song.file_url, cover_url: song.cover_url, artist: artistName }, songs)}
               >
                 {showRank && (
-                  <div className="absolute top-0 left-0 w-5 h-5 sm:w-6 sm:h-6 bg-indigo-600/90 backdrop-blur text-white font-black rounded-br-lg flex items-center justify-center text-[10px] sm:text-xs z-20 shadow-md border-b border-r border-indigo-500/50">
-                    {index + 1}
+                  <div
+                    className={`absolute top-0 left-0 w-5 h-5 sm:w-6 sm:h-6 backdrop-blur font-black rounded-br-lg flex items-center justify-center text-[10px] sm:text-xs z-20 shadow-md border-b border-r ${
+                      index === 0
+                        ? "bg-gradient-to-br from-amber-300 via-amber-400 to-yellow-500 text-black border-amber-300/80 shadow-amber-500/30"
+                        : index === 1
+                        ? "bg-gradient-to-br from-slate-200 via-slate-300 to-slate-400 text-slate-900 border-slate-300/80 shadow-slate-400/30"
+                        : index === 2
+                        ? "bg-gradient-to-br from-amber-600 via-amber-700 to-amber-800 text-white border-amber-600/80 shadow-amber-700/30"
+                        : "bg-indigo-600/90 text-white border-indigo-500/50"
+                    }`}
+                  >
+                    {index === 0 ? "👑" : index + 1}
                   </div>
                 )}
                 {song.cover_url ? (
@@ -162,6 +172,15 @@ export default function TrackList({
                       {song.title}
                     </Link>
                   </h3>
+                  {showRank && song.rankingScore !== undefined && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-black bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-purple-500/15 text-rose-600 border border-rose-300/70 shadow-2xs shrink-0 cursor-help"
+                      title={`総合 ${song.rankingScore}pt（再生:${song.rankingBreakdown?.play || 0}P / いいね:${song.rankingBreakdown?.like || 0}P / コメント:${song.rankingBreakdown?.comment || 0}P）`}
+                    >
+                      <span>🔥</span>
+                      <span>{song.rankingScore} pt</span>
+                    </span>
+                  )}
                   {song.synced_lyrics && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black bg-gradient-to-r from-indigo-600 to-pink-600 text-white shrink-0 shadow-2xs tracking-wider">
                       <span>🎬</span>

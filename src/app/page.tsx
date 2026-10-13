@@ -11,6 +11,8 @@ import AnnouncementBanner from "@/components/AnnouncementBanner";
 import FeaturedPlaylistsSection from "@/components/FeaturedPlaylistsSection";
 import VisitorCounter from "@/components/VisitorCounter";
 import RecentCommentsTicker, { CommentTickerItem } from "@/components/RecentCommentsTicker";
+import RankedTracksSection from "@/components/RankedTracksSection";
+import { calculateRankedSongs, getThisWeekMondayJST } from "@/utils/ranking";
 import { connection } from "next/server";
 
 export default async function Home() {
@@ -23,16 +25,14 @@ export default async function Home() {
     { count: songCount },
     { data: profiles },
     { data: songs },
-    { data: rankedSongs },
     { data: publicPlaylists },
     { data: latestComments },
     { data: latestLikes }
   ] = await Promise.all([
     supabase.from("songs").select("*", { count: "exact", head: true }),
     supabase.from("profiles").select("*").order("created_at", { ascending: false }),
-    supabase.from("songs").select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(user_id), amu_comments(id)").order("created_at", { ascending: false }),
-    // 毎週月曜0時にリセットされる週間再生回数順（フォールバックで累計再生数）
-    supabase.from("songs").select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(user_id), amu_comments(id)").order("weekly_play_count", { ascending: false }).order("play_count", { ascending: false }).limit(5),
+    // 全楽曲およびリレーション（いいね・コメントの日時・内容・ユーザーID含む）を一括取得
+    supabase.from("songs").select("*, profiles:profiles!fk_user_profile(*), co_artist_1:profiles!songs_co_artist_id_1_fkey(*), co_artist_2:profiles!songs_co_artist_id_2_fkey(*), likes(id, user_id, created_at), amu_comments(id, user_id, content, created_at)").order("created_at", { ascending: false }),
     supabase.from("playlists").select("id, title, description, created_at, profiles:profiles!fk_playlist_profile(id, artist_name, avatar_url, role), playlist_songs(id, song_id, songs:songs!fk_playlist_song(cover_url))").eq("is_public", true).order("created_at", { ascending: false }).limit(6),
     supabase.from("amu_comments").select("id, song_id, created_at").order("created_at", { ascending: false }).limit(5),
     supabase.from("likes").select("id, song_id, created_at").order("created_at", { ascending: false }).limit(5),
@@ -107,6 +107,12 @@ export default async function Home() {
 
   // サーバー側でランダムな1曲を選ぶ
   const randomSong = songs && songs.length > 0 ? songs[Math.floor(Math.random() * songs.length)] : null;
+
+  // ランキングの計算（今週: 月曜0時JST以降、累計: 全期間）
+  // ルール: 再生 1P (何度再生しても1P) / いいね 2P (ユニーク1度きり) / コメント 3P (3文字以上)
+  const mondayJST = getThisWeekMondayJST();
+  const weeklyRankedSongs = calculateRankedSongs(songs || [], mondayJST);
+  const allTimeRankedSongs = calculateRankedSongs(songs || [], null);
 
   return (
     <main className="min-h-screen bg-white text-slate-900 selection:bg-slate-900 selection:text-white pb-32 font-sans">
@@ -185,22 +191,12 @@ export default async function Home() {
               <TrackList songs={songs || []} currentUserId={user?.id} limit={5} />
             </div>
 
-            {/* 2. 人気のトラック（ランキングセクション） */}
-            <div className="min-w-0">
-              <div className="flex items-center justify-between mb-4 sm:mb-8 flex-wrap gap-2">
-                <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 sm:gap-3 text-slate-800 tracking-tight">
-                  <span className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100">
-                    <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
-                  </span>
-                  <span>人気のトラック</span>
-                  <span className="text-[10px] sm:text-xs font-black px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-200/60 tracking-wider">
-                    毎週月曜0時リセット
-                  </span>
-                </h2>
-              </div>
-              
-              <TrackList songs={rankedSongs || []} currentUserId={user?.id} showRank={true} />
-            </div>
+            {/* 2. 人気のトラック（ランキングセクション：今週＆累計タブ） */}
+            <RankedTracksSection
+              weeklySongs={weeklyRankedSongs}
+              allTimeSongs={allTimeRankedSongs}
+              currentUserId={user?.id}
+            />
 
             {/* 3. みんなのプレイリスト（公開プレイリスト） */}
             <div className="min-w-0">
