@@ -151,29 +151,21 @@ export default async function Home() {
           {/* ランダムに選ばれた曲の大型プレイヤー */}
           <HeroPlayer song={randomSong} />
 
-          {/* ライブモード入り口 ＆ ランダム再生バー（最新のトラックの上に配置） */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-slate-900 border border-rose-500/30 shadow-xl relative overflow-hidden group mt-4 sm:mt-6 mb-2">
-            <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 via-pink-600/10 to-purple-600/20 opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none" />
-            
-            {/* ライブモード専用ステージへ */}
+          {/* 連続再生＆LIVEステージへのスマートアクションバー */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-slate-50 border border-slate-200 shadow-xs mt-4 sm:mt-6 mb-2">
+            <div className="flex items-center gap-3">
+              <RandomPlayButton songs={songs || []} />
+              <span className="text-xs text-slate-500 font-medium hidden sm:inline">全楽曲からシャッフル連続再生</span>
+            </div>
+
             <Link
               href="/live"
-              className="relative z-10 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-gradient-to-r from-red-600 via-rose-600 to-purple-600 hover:from-red-500 hover:to-purple-500 text-white font-black text-xs sm:text-sm md:text-base shadow-lg shadow-rose-600/30 transition-all active:scale-95 group/btn cursor-pointer border border-white/20 select-none"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white hover:bg-slate-100 text-slate-800 text-xs sm:text-sm font-bold border border-slate-200 shadow-2xs hover:border-slate-300 transition-all active:scale-95 cursor-pointer"
             >
-              <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping" />
-              <span>🏟️ LIVEステージモード</span>
-              <span className="hidden sm:inline-flex items-center text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-black/30 font-bold border border-white/20 text-rose-200">
-                客席視点・BOOST連打
-              </span>
-              <svg className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
-              </svg>
+              <span className="text-sm">🏟️</span>
+              <span>LIVEステージ</span>
+              <span className="text-slate-400 text-xs">↗</span>
             </Link>
-
-            {/* その横に並べるランダム再生 */}
-            <div className="relative z-10 flex items-center gap-2">
-              <RandomPlayButton songs={songs || []} />
-            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-10 sm:gap-16 min-w-0 mt-4 sm:mt-6">

@@ -416,48 +416,48 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         source.buffer = buffer;
         activeCheerSourceRef.current = source;
 
-        // 1. マスター歓声Gain（適度な音量 0.38 で楽曲を邪魔せず、奥から湧き上がる臨場感）
+        // 1. マスター歓声Gain（迫力のある大歓声：0.75でしっかりとした音圧と臨場感）
         const masterGain = ctx.createGain();
         activeCheerGainRef.current = masterGain;
 
-        // 2. 距離・空気吸収フィルター（Low-pass Filter 2400Hz）
-        // 大ホール・アリーナで客席からステージまで音が伝播する際の空気減衰を再現し、
-        // 「マイクの至近距離で録ったような声のトゲ・息遣い」を完全に排除！
+        // 2. 空間・音響フィルター（Low-pass Filter 5200Hz）
+        // 篭りすぎを解消しつつ、至近距離の極端な耳障りさだけを取り除き、
+        // スタジアム・大ホールの拍手の抜けと歓声の明るい高揚感をリアルに再現
         const distanceFilter = ctx.createBiquadFilter();
         distanceFilter.type = "lowpass";
-        distanceFilter.frequency.value = 2400;
-        distanceFilter.Q.value = 0.6;
+        distanceFilter.frequency.value = 5200;
+        distanceFilter.Q.value = 0.7;
 
         source.connect(masterGain);
         masterGain.connect(distanceFilter);
 
-        // 3. 直接音（Dry 22%）とホール残響（Wet 78%）の空間ブレンド
-        // 直接音は遠距離減衰させて控えめにし、大半を大ホール・コンボリューションリバーブに送り込むことで、
-        // 巨大なホールの客席・バルコニー全体から反響して響き渡る圧倒的なスケール感を創出
+        // 3. 直接音（Dry 55%）とホール残響（Wet 90%）の空間ブレンド
+        // オーディエンスの生の歓声・拍手の芯をしっかり立たせ、
+        // 大ホール・コンボリューションリバーブと合わさって会場全体を包み込む音場を創出
         const dryCheerGain = ctx.createGain();
-        dryCheerGain.gain.value = 0.22;
+        dryCheerGain.gain.value = 0.55;
         distanceFilter.connect(dryCheerGain);
         dryCheerGain.connect(ctx.destination);
 
         if (convolverRef.current) {
           const wetCheerGain = ctx.createGain();
-          wetCheerGain.gain.value = 0.78;
+          wetCheerGain.gain.value = 0.90;
           distanceFilter.connect(wetCheerGain);
           wetCheerGain.connect(convolverRef.current);
         }
 
         const now = ctx.currentTime;
-        const initialVol = 0.38;
+        const initialVol = 0.75;
 
         if (isSongStart) {
-          // 演奏開始時：1.8秒間しっかり大空間に響き渡り、その後4.2秒かけて滑らかに指数フェードアウト！
+          // 演奏開始時：2.5秒間しっかり会場全体を熱狂の大歓声で包み、その後自然に指数フェードアウト
           masterGain.gain.setValueAtTime(initialVol, now);
-          masterGain.gain.setValueAtTime(initialVol, now + 1.8);
-          masterGain.gain.setTargetAtTime(0.0001, now + 1.8, 1.2);
+          masterGain.gain.setValueAtTime(initialVol, now + 2.5);
+          masterGain.gain.setTargetAtTime(0.0001, now + 2.5, 1.4);
         } else {
           // 手動時
           masterGain.gain.setValueAtTime(initialVol, now);
-          masterGain.gain.setTargetAtTime(0.0001, now + 1.0, 1.0);
+          masterGain.gain.setTargetAtTime(0.0001, now + 1.2, 1.0);
         }
 
         source.start(now);
@@ -471,7 +471,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     try {
       const audio = new Audio(chosen.src);
       cheerAudioRef.current = audio;
-      const initialVol = 0.38;
+      const initialVol = 0.75;
       audio.volume = initialVol;
       audio.currentTime = 0;
       const p = audio.play();
@@ -479,8 +479,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
 
       if (isSongStart) {
         setTimeout(() => {
-          fadeOutAudio(audio, 4200);
-        }, 1800);
+          fadeOutAudio(audio, 4000);
+        }, 2500);
       }
     } catch (e) {
       console.warn("Cheer audio play error:", e);
@@ -1322,16 +1322,6 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
             ? "bg-slate-950/95 border-rose-500/30 shadow-[0_-10px_40px_rgba(225,29,72,0.15)] text-white"
             : "bg-white/95 border-slate-200/90 shadow-[0_-10px_35px_rgba(0,0,0,0.08)] text-slate-900"
         }`}>
-          {/* LIVEモード 歓声発生時のフローティングトースト演出 */}
-          {currentCheerToast && isLiveMode && (
-            <div className="absolute -top-11 left-1/2 -translate-x-1/2 bg-slate-900/95 text-white backdrop-blur-md px-3.5 py-1 rounded-full text-xs font-bold shadow-2xl flex items-center gap-1.5 border border-rose-500/60 animate-bounce z-30 pointer-events-none whitespace-nowrap">
-              <span className="text-sm">🏟️</span>
-              <span className="bg-gradient-to-r from-amber-300 via-rose-300 to-pink-300 bg-clip-text text-transparent font-black tracking-wide">
-                LIVE STAGE：{currentCheerToast.name}！
-              </span>
-            </div>
-          )}
-
           {/* 超快適シークバー（広いタップ＆ドラッグ当たり判定エリア） */}
           <div
             ref={progressBarRef}
@@ -1405,14 +1395,6 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                   >
                     {currentSong.title}
                   </Link>
-
-                  {/* LIVE HALL モードバッジ */}
-                  {isLiveMode && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-black bg-gradient-to-r from-red-600 via-rose-600 to-purple-600 text-white shadow-sm shrink-0 tracking-wider ring-1 ring-white/20">
-                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                      <span>LIVE HALL</span>
-                    </span>
-                  )}
 
                   {/* リリモ対応バッジ */}
                   {currentSong.synced_lyrics && (
@@ -1511,33 +1493,24 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 </span>
               )}
 
-              {/* LIVEモード（大ホールリバーブ）のON / OFF トグルボタン（解除可能！） */}
+              {/* LIVE音響（大ホール空間）トグル：操作系と調和するシンプルな丸型ボタン */}
               <button
                 type="button"
                 onClick={toggleLiveMode}
-                title={isLiveMode ? "LIVE音響（大ホールリバーブ）を解除する" : "LIVE音響（大ホールリバーブ）をONにする"}
-                className={`relative px-2.5 sm:px-3 py-1.5 rounded-full font-black text-[10px] sm:text-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 border select-none ${
+                title={isLiveMode ? "LIVE音響（大ホール）をOFFにする" : "LIVE音響（大ホール空間）をONにする"}
+                className={`p-2 sm:p-2.5 rounded-full transition-all active:scale-95 cursor-pointer relative select-none ${
                   isLiveMode
-                    ? "bg-gradient-to-r from-red-600 via-rose-600 to-purple-600 text-white border-transparent shadow-lg shadow-rose-500/30 ring-2 ring-rose-400/50"
-                    : "bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                    ? "bg-rose-600 text-white shadow-md shadow-rose-500/30 ring-2 ring-rose-400/50"
+                    : isLiveMode
+                    ? "text-slate-400 hover:text-white hover:bg-slate-900"
+                    : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
                 }`}
               >
-                <span className={`w-2 h-2 rounded-full shrink-0 ${isLiveMode ? "bg-white animate-pulse" : "bg-slate-400"}`} />
-                <span>{isLiveMode ? "LIVE ON" : "LIVE OFF"}</span>
-                <span className="text-[10px] hidden sm:inline">🏟️</span>
+                <span className="text-xs sm:text-sm leading-none">🏟️</span>
+                {isLiveMode && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-white ring-2 ring-rose-500 animate-pulse"></span>
+                )}
               </button>
-
-              {/* LIVEモードがONの時のみ表示される「ステージ画面へ」リンク */}
-              {isLiveMode && (
-                <Link
-                  href="/live"
-                  title="客席視点のライブステージ画面へ！"
-                  className="px-2 sm:px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-black bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-500/40 active:scale-95 transition-all cursor-pointer shadow-xs select-none flex items-center gap-1"
-                >
-                  <span>ステージへ</span>
-                  <span>↗</span>
-                </Link>
-              )}
 
               {/* シャッフル / ランダム再生トグルボタン */}
               <button
