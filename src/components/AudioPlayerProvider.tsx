@@ -72,13 +72,13 @@ const AudioPlayerContext = createContext<AudioPlayerContextType>({
 
 export const useAudioPlayer = () => useContext(AudioPlayerContext);
 
-// LIVEモード 日本人オーディエンス歓声バリエーションリスト（日本人の大歓声・拍手・コール）
+// LIVEモード 大ホール・アリーナ大歓声バリエーションリスト（遠距離残響・大群衆・スタジアム音響）
 export const LIVE_CHEERS = [
-  { id: "jp_performance", name: "大歓声＆拍手喝采", src: "/sounds/live/cheer_jp_performance.mp3?v=jp3" },
-  { id: "jp_kyaa", name: "黄色い歓声・コール", src: "/sounds/live/cheer_jp_kyaa.mp3?v=jp3" },
-  { id: "jp_stadium", name: "スタジアム熱狂コール", src: "/sounds/live/cheer_jp_stadium.mp3?v=jp3" },
-  { id: "jp_applause", name: "会場一体の拍手喝采", src: "/sounds/live/cheer_jp_applause.mp3?v=jp3" },
-  { id: "jp_mixed", name: "オーディエンス大歓声", src: "/sounds/live/cheer_jp_mixed.mp3?v=jp3" },
+  { id: "arena_stadium", name: "スタジアム大歓声", src: "/sounds/live/cheer_arena_stadium1.mp3?v=hall2" },
+  { id: "arena_buzz", name: "アリーナ大熱狂の歓声", src: "/sounds/live/cheer_arena_buzz1.mp3?v=hall2" },
+  { id: "arena_applause", name: "大ホール万雷の拍手喝采", src: "/sounds/live/cheer_arena_applause1.mp3?v=hall2" },
+  { id: "hall_perf1", name: "大公演オーディエンス歓声", src: "/sounds/live/cheer_hall_performance1.mp3?v=hall2" },
+  { id: "hall_perf2", name: "コンサートホール喝采", src: "/sounds/live/cheer_hall_performance2.mp3?v=hall2" },
 ];
 
 /**
@@ -223,6 +223,10 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
   const audioContextRef = useRef<AudioContext | null>(null);
   const wetGainRef = useRef<GainNode | null>(null);
   const dryGainRef = useRef<GainNode | null>(null);
+  const convolverRef = useRef<ConvolverNode | null>(null);
+  const cheerBufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
+  const activeCheerGainRef = useRef<GainNode | null>(null);
+  const activeCheerSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const isWebAudioConnectedRef = useRef(false);
 
   // 歓声（Cheering）関連のRefと状態
@@ -279,7 +283,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       preFilter.Q.value = 0.7;
 
       const convolver = ctx.createConvolver();
-      convolver.buffer = createHallImpulse(ctx, 2.8, 3.0);
+      convolver.buffer = createHallImpulse(ctx, 3.2, 2.8);
+      convolverRef.current = convolver;
 
       const wetGain = ctx.createGain();
       wetGain.gain.value = isLiveModeRef.current ? 0.52 : 0;
@@ -291,6 +296,17 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       wetGain.connect(ctx.destination);
 
       isWebAudioConnectedRef.current = true;
+
+      // 歓声オーディオをバックグラウンドでデコード＆キャッシュ（初回再生時の遅延完全ゼロ化）
+      LIVE_CHEERS.forEach((c) => {
+        fetch(c.src)
+          .then((res) => res.arrayBuffer())
+          .then((ab) => ctx.decodeAudioData(ab))
+          .then((decoded) => {
+            cheerBufferCacheRef.current.set(c.src, decoded);
+          })
+          .catch(() => {});
+      });
 
       if (ctx.state === "suspended") {
         ctx.resume().catch(() => {});
@@ -347,8 +363,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     }, stepInterval);
   }, []);
 
-  // 歓声SEの再生（毎回異なるバリエーションからランダム選出 ＆ ぶつ切り防止フェードアウト）
-  const playLiveCheer = useCallback((isSongStart = true) => {
+  // 歓声SEの再生（大ホール・アリーナの広大な空間音響 ＆ 遠距離残響エフェクト）
+  const playLiveCheer = useCallback(async (isSongStart = true) => {
     if (typeof window === "undefined") return;
 
     // 前回の歓声と被らないようにランダム選択
@@ -362,7 +378,17 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       setCurrentCheerToast((prev) => (prev?.id === chosen.id ? null : prev));
     }, 3200);
 
+    initWebAudio();
+    const ctx = audioContextRef.current;
+
     // 以前の歓声再生がある場合は、即座に切らず滑らかにフェードアウト！
+    if (activeCheerGainRef.current && ctx) {
+      try {
+        const now = ctx.currentTime;
+        activeCheerGainRef.current.gain.cancelScheduledValues(now);
+        activeCheerGainRef.current.gain.setTargetAtTime(0.0001, now, 0.2);
+      } catch {}
+    }
     if (cheerFadeIntervalRef.current) {
       clearInterval(cheerFadeIntervalRef.current);
       cheerFadeIntervalRef.current = null;
@@ -372,48 +398,94 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     }
 
     try {
+      if (ctx) {
+        if (ctx.state === "suspended") {
+          await ctx.resume().catch(() => {});
+        }
+
+        // バッファ取得（未キャッシュなら即時ロード＆デコード）
+        let buffer = cheerBufferCacheRef.current.get(chosen.src);
+        if (!buffer) {
+          const res = await fetch(chosen.src);
+          const arrayBuffer = await res.arrayBuffer();
+          buffer = await ctx.decodeAudioData(arrayBuffer);
+          cheerBufferCacheRef.current.set(chosen.src, buffer);
+        }
+
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        activeCheerSourceRef.current = source;
+
+        // 1. マスター歓声Gain（適度な音量 0.38 で楽曲を邪魔せず、奥から湧き上がる臨場感）
+        const masterGain = ctx.createGain();
+        activeCheerGainRef.current = masterGain;
+
+        // 2. 距離・空気吸収フィルター（Low-pass Filter 2400Hz）
+        // 大ホール・アリーナで客席からステージまで音が伝播する際の空気減衰を再現し、
+        // 「マイクの至近距離で録ったような声のトゲ・息遣い」を完全に排除！
+        const distanceFilter = ctx.createBiquadFilter();
+        distanceFilter.type = "lowpass";
+        distanceFilter.frequency.value = 2400;
+        distanceFilter.Q.value = 0.6;
+
+        source.connect(masterGain);
+        masterGain.connect(distanceFilter);
+
+        // 3. 直接音（Dry 22%）とホール残響（Wet 78%）の空間ブレンド
+        // 直接音は遠距離減衰させて控えめにし、大半を大ホール・コンボリューションリバーブに送り込むことで、
+        // 巨大なホールの客席・バルコニー全体から反響して響き渡る圧倒的なスケール感を創出
+        const dryCheerGain = ctx.createGain();
+        dryCheerGain.gain.value = 0.22;
+        distanceFilter.connect(dryCheerGain);
+        dryCheerGain.connect(ctx.destination);
+
+        if (convolverRef.current) {
+          const wetCheerGain = ctx.createGain();
+          wetCheerGain.gain.value = 0.78;
+          distanceFilter.connect(wetCheerGain);
+          wetCheerGain.connect(convolverRef.current);
+        }
+
+        const now = ctx.currentTime;
+        const initialVol = 0.38;
+
+        if (isSongStart) {
+          // 演奏開始時：1.8秒間しっかり大空間に響き渡り、その後4.2秒かけて滑らかに指数フェードアウト！
+          masterGain.gain.setValueAtTime(initialVol, now);
+          masterGain.gain.setValueAtTime(initialVol, now + 1.8);
+          masterGain.gain.setTargetAtTime(0.0001, now + 1.8, 1.2);
+        } else {
+          // 手動時
+          masterGain.gain.setValueAtTime(initialVol, now);
+          masterGain.gain.setTargetAtTime(0.0001, now + 1.0, 1.0);
+        }
+
+        source.start(now);
+        return;
+      }
+    } catch (e) {
+      console.warn("Web Audio cheer playback fallback:", e);
+    }
+
+    // Web Audio非対応環境向けの安全なフォールバック
+    try {
       const audio = new Audio(chosen.src);
       cheerAudioRef.current = audio;
-      const initialVol = 0.85;
+      const initialVol = 0.38;
       audio.volume = initialVol;
       audio.currentTime = 0;
-
       const p = audio.play();
-      if (p !== undefined) {
-        p.catch((e) => console.warn("Live cheer play note:", e));
-      }
+      if (p !== undefined) p.catch(() => {});
 
-      // 演奏開始時：1.8秒間しっかり大歓声が沸き立ち、その後4.2秒かけて自然に余韻がフェードアウト！
       if (isSongStart) {
-        const holdMs = 1800;
-        const fadeMs = 4200;
-        const steps = 45;
-        const stepInterval = fadeMs / steps;
-
         setTimeout(() => {
-          let step = 0;
-          cheerFadeIntervalRef.current = setInterval(() => {
-            step++;
-            const t = step / steps;
-            // 自然な音響減衰カーブ（指数フェードアウト）
-            const decay = Math.pow(1 - t, 1.8);
-            if (audio) {
-              audio.volume = Math.max(0, initialVol * decay);
-            }
-            if (step >= steps || (audio && audio.volume <= 0.01)) {
-              clearInterval(cheerFadeIntervalRef.current);
-              cheerFadeIntervalRef.current = null;
-              if (audio) {
-                try { audio.pause(); } catch {}
-              }
-            }
-          }, stepInterval);
-        }, holdMs);
+          fadeOutAudio(audio, 4200);
+        }, 1800);
       }
     } catch (e) {
       console.warn("Cheer audio play error:", e);
     }
-  }, [fadeOutAudio]);
+  }, [initWebAudio, fadeOutAudio]);
 
   // LIVEモードのON/OFF切り替え
   const toggleLiveMode = useCallback(() => {
@@ -434,6 +506,13 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         playLiveCheer(true);
       } else {
         // OFFにした時は鳴っている歓声も滑らかにフェードアウト
+        if (activeCheerGainRef.current && audioContextRef.current) {
+          try {
+            const now = audioContextRef.current.currentTime;
+            activeCheerGainRef.current.gain.cancelScheduledValues(now);
+            activeCheerGainRef.current.gain.setTargetAtTime(0.0001, now, 0.2);
+          } catch {}
+        }
         if (cheerAudioRef.current) {
           fadeOutAudio(cheerAudioRef.current, 600);
         }
