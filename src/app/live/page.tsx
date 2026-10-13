@@ -288,7 +288,7 @@ export default function LiveStagePage() {
 
   return (
     <div
-      className={`relative w-full min-h-screen h-screen overflow-hidden bg-black select-none text-white ${
+      className={`relative w-full min-h-screen h-screen overflow-hidden bg-black select-none text-white flex flex-col justify-between ${
         isScreenShaking ? "animate-[wiggle_0.2s_ease-in-out]" : ""
       }`}
     >
@@ -317,83 +317,86 @@ export default function LiveStagePage() {
       {/* 5. パーティクル用 Canvas */}
       <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none z-20" />
 
-      {/* 6. 上部ヘッダーコントロール */}
-      <header className="relative z-30 flex items-center justify-between p-4 sm:p-6 max-w-7xl mx-auto w-full">
-        {/* 通常画面へ戻る */}
-        <Link
-          href="/"
-          className="flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/15 text-xs sm:text-sm font-bold text-white transition-all active:scale-95 shadow-lg group cursor-pointer"
-        >
-          <svg className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-          </svg>
-          <span>通常モードへ戻る</span>
-        </Link>
+      {/* ────────── [上部セクション] ヘッダー ＆ LEDスクリーン ────────── */}
+      <div className="relative z-30 w-full shrink-0 flex flex-col items-center">
+        {/* 6. 上部ヘッダーコントロール */}
+        <header className="flex items-center justify-between p-3 sm:p-5 max-w-7xl mx-auto w-full">
+          {/* 通常画面へ戻る */}
+          <Link
+            href="/"
+            className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/15 text-xs sm:text-sm font-bold text-white transition-all active:scale-95 shadow-lg group cursor-pointer"
+          >
+            <svg className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+            </svg>
+            <span>通常へ戻る</span>
+          </Link>
 
-        {/* ライブステージ情報バッジ */}
-        <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-rose-500/40 shadow-lg shadow-rose-950/50">
-          <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
-          <span className="text-xs sm:text-sm font-black tracking-widest bg-gradient-to-r from-red-400 via-rose-300 to-amber-300 bg-clip-text text-transparent uppercase">
-            LIVE ARENA HALL
-          </span>
-          <span className="text-xs hidden sm:inline">🏟️</span>
-        </div>
+          {/* ライブステージ情報バッジ */}
+          <div className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-rose-500/40 shadow-lg shadow-rose-950/50">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+            <span className="text-[11px] sm:text-sm font-black tracking-widest bg-gradient-to-r from-red-400 via-rose-300 to-amber-300 bg-clip-text text-transparent uppercase">
+              LIVE ARENA HALL
+            </span>
+            <span className="text-xs hidden sm:inline">🏟️</span>
+          </div>
 
-        {/* 選曲ボタン */}
-        <button
-          type="button"
-          onClick={() => setIsSongPickerOpen(true)}
-          className="flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-full bg-rose-600/80 hover:bg-rose-600 backdrop-blur-md border border-rose-400/50 text-xs sm:text-sm font-black text-white transition-all active:scale-95 shadow-lg shadow-rose-600/30 cursor-pointer"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
-          </svg>
-          <span>選曲する</span>
-        </button>
-      </header>
+          {/* 選曲ボタン */}
+          <button
+            type="button"
+            onClick={() => setIsSongPickerOpen(true)}
+            className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-rose-600/80 hover:bg-rose-600 backdrop-blur-md border border-rose-400/50 text-xs sm:text-sm font-black text-white transition-all active:scale-95 shadow-lg shadow-rose-600/30 cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
+            </svg>
+            <span>選曲する</span>
+          </button>
+        </header>
 
-      {/* 7. ステージ中央：LEDスクリーン（現在演奏中の楽曲プロジェクション） */}
-      <div className="relative z-20 flex flex-col items-center justify-center pt-1 sm:pt-3 px-4 text-center max-w-xl mx-auto pointer-events-none">
-        {currentSong ? (
-          <div className="flex flex-col items-center">
-            {/* スクリーン風カバーアート */}
-            <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-2xl overflow-hidden shadow-[0_0_40px_rgba(244,63,94,0.35)] border-2 border-rose-500/50 relative mb-2 group">
-              {currentSong.cover_url ? (
-                <img src={currentSong.cover_url} alt="Cover" className="w-full h-full object-cover animate-[pulse_4s_ease-in-out_infinite]" />
-              ) : (
-                <div className="w-full h-full bg-slate-900 flex items-center justify-center text-rose-400 font-black text-lg">
-                  LIVE
-                </div>
-              )}
-              {isPlaying && (
-                <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                  <div className="flex items-end gap-1 h-5">
-                    <span className="w-1 bg-rose-400 animate-[bounce_0.8s_infinite] h-full rounded-full" />
-                    <span className="w-1 bg-rose-400 animate-[bounce_0.6s_infinite] h-3.5 rounded-full" />
-                    <span className="w-1 bg-rose-400 animate-[bounce_1.0s_infinite] h-full rounded-full" />
+        {/* 7. ステージLEDスクリーン（現在演奏中の楽曲プロジェクション） */}
+        <div className="flex flex-col items-center justify-center px-4 text-center max-w-xl mx-auto pointer-events-none pb-1">
+          {currentSong ? (
+            <div className="flex flex-col items-center">
+              {/* スクリーン風カバーアート */}
+              <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-2xl overflow-hidden shadow-[0_0_35px_rgba(244,63,94,0.35)] border-2 border-rose-500/50 relative mb-1.5 group">
+                {currentSong.cover_url ? (
+                  <img src={currentSong.cover_url} alt="Cover" className="w-full h-full object-cover animate-[pulse_4s_ease-in-out_infinite]" />
+                ) : (
+                  <div className="w-full h-full bg-slate-900 flex items-center justify-center text-rose-400 font-black text-sm sm:text-base">
+                    LIVE
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+                {isPlaying && (
+                  <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                    <div className="flex items-end gap-1 h-4">
+                      <span className="w-1 bg-rose-400 animate-[bounce_0.8s_infinite] h-full rounded-full" />
+                      <span className="w-1 bg-rose-400 animate-[bounce_0.6s_infinite] h-3 rounded-full" />
+                      <span className="w-1 bg-rose-400 animate-[bounce_1.0s_infinite] h-full rounded-full" />
+                    </div>
+                  </div>
+                )}
+              </div>
 
-            {/* 楽曲タイトル */}
-            <h1 className="text-lg sm:text-2xl font-black text-white drop-shadow-[0_2px_15px_rgba(0,0,0,0.9)] tracking-tight line-clamp-1 mb-0.5">
-              {currentSong.title}
-            </h1>
-            {/* アーティスト名 */}
-            <p className="text-xs sm:text-sm text-rose-200/90 font-bold drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] line-clamp-1">
-              {currentSong.artist}
-            </p>
-          </div>
-        ) : (
-          <div className="text-center py-4">
-            <p className="text-xs sm:text-sm text-slate-300 font-bold">右上の「選曲する」から曲を選んでライブを開始！</p>
-          </div>
-        )}
+              {/* 楽曲タイトル */}
+              <h1 className="text-base sm:text-xl font-black text-white drop-shadow-[0_2px_15px_rgba(0,0,0,0.9)] tracking-tight line-clamp-1">
+                {currentSong.title}
+              </h1>
+              {/* アーティスト名 */}
+              <p className="text-[11px] sm:text-xs text-rose-200/90 font-bold drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] line-clamp-1">
+                {currentSong.artist}
+              </p>
+            </div>
+          ) : (
+            <div className="text-center py-2">
+              <p className="text-xs text-slate-300 font-bold">右上の「選曲する」から曲を選んでライブを開始！</p>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* 8. 画面中央：超巨大「BOOST!」ボタン ＆ コンボ ＆ 楽曲トータル数 ＆ コール */}
-      <div className="absolute top-[53%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center pointer-events-auto w-full max-w-sm px-4">
+      {/* ────────── [中央セクション] BOOSTボタン ＆ カウンター ＆ コール（自然な中央配置で絶対に被らない！） ────────── */}
+      <div className="relative z-30 flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto px-4 my-auto min-h-0 pointer-events-auto">
         {/* 歓声トースト演出（日本人オーディエンスの歓声が発生した時） */}
         {currentCheerToast && (
           <div className="mb-2 px-3 py-1 rounded-full bg-slate-900/95 border border-rose-500/60 shadow-xl backdrop-blur-md animate-bounce text-[11px] sm:text-xs font-bold text-rose-300 flex items-center gap-1.5 pointer-events-none">
@@ -447,7 +450,7 @@ export default function LiveStagePage() {
           </div>
         </button>
 
-        {/* ★ この曲の総ブースト数カウンター（BOOSTボタン直下に美しく配置され、絶対に被らない！） */}
+        {/* ★ この曲の総ブースト数カウンター（BOOSTボタン直下に配置し被りを100%解消） */}
         <div className="mt-3 flex items-center gap-2 px-3.5 sm:px-4 py-1.5 rounded-full bg-slate-900/90 border border-rose-500/50 backdrop-blur-md shadow-2xl">
           <span className="text-[11px] sm:text-xs text-slate-300 font-bold">この曲のBOOST:</span>
           <span className="text-base sm:text-lg font-black text-amber-300 font-mono tracking-wider">
@@ -470,24 +473,8 @@ export default function LiveStagePage() {
         </div>
       </div>
 
-      {/* 9. フローティングテキスト（+1 BOOST! などの飛翔演出） */}
-      {floatingTexts.map((item) => (
-        <div
-          key={item.id}
-          className="absolute z-40 font-black text-base sm:text-lg pointer-events-none animate-[floatUp_0.9s_ease-out_forwards]"
-          style={{
-            left: item.x,
-            top: item.y,
-            color: item.color,
-            textShadow: "0 0 10px rgba(0,0,0,0.9), 0 0 20px " + item.color,
-          }}
-        >
-          {item.text}
-        </div>
-      ))}
-
-      {/* 10. 画面下部：ライブプレイヤー・コントロールバー */}
-      <footer className="absolute bottom-0 left-0 w-full z-30 p-3 sm:p-5 bg-gradient-to-t from-black via-black/90 to-transparent flex flex-col items-center">
+      {/* ────────── [下部セクション] プレイヤーコントロールバー ────────── */}
+      <footer className="relative z-30 w-full shrink-0 p-3 sm:p-5 bg-gradient-to-t from-black via-black/90 to-transparent flex flex-col items-center">
         <div className="max-w-4xl w-full flex items-center justify-between gap-4">
           {/* 左側：曲時間表示 */}
           <div className="text-xs font-mono text-slate-400 hidden sm:block">
@@ -567,6 +554,22 @@ export default function LiveStagePage() {
           </div>
         </div>
       </footer>
+
+      {/* 9. フローティングテキスト（+1 BOOST! などの飛翔演出） */}
+      {floatingTexts.map((item) => (
+        <div
+          key={item.id}
+          className="absolute z-40 font-black text-base sm:text-lg pointer-events-none animate-[floatUp_0.9s_ease-out_forwards]"
+          style={{
+            left: item.x,
+            top: item.y,
+            color: item.color,
+            textShadow: "0 0 10px rgba(0,0,0,0.9), 0 0 20px " + item.color,
+          }}
+        >
+          {item.text}
+        </div>
+      ))}
 
       {/* 11. 選曲モーダル（ドロワー） */}
       {isSongPickerOpen && (

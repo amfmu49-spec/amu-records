@@ -71,11 +71,11 @@ export const useAudioPlayer = () => useContext(AudioPlayerContext);
 
 // LIVEモード 日本人オーディエンス歓声バリエーションリスト（日本人の大歓声・拍手・コール）
 export const LIVE_CHEERS = [
-  { id: "performance", name: "大歓声＆拍手喝采", src: "/sounds/live/cheer_performance.mp3" },
-  { id: "kyaa", name: "黄色い歓声・コール", src: "/sounds/live/cheer_kyaa.mp3" },
-  { id: "stadium", name: "スタジアム熱狂コール", src: "/sounds/live/cheer_stadium.mp3" },
-  { id: "applause", name: "会場一体の拍手喝采", src: "/sounds/live/cheer_applause.mp3" },
-  { id: "mixed", name: "オーディエンス大歓声", src: "/sounds/live/cheer_mixed.mp3" },
+  { id: "jp_performance", name: "大歓声＆拍手喝采", src: "/sounds/live/cheer_jp_performance.mp3?v=jp3" },
+  { id: "jp_kyaa", name: "黄色い歓声・コール", src: "/sounds/live/cheer_jp_kyaa.mp3?v=jp3" },
+  { id: "jp_stadium", name: "スタジアム熱狂コール", src: "/sounds/live/cheer_jp_stadium.mp3?v=jp3" },
+  { id: "jp_applause", name: "会場一体の拍手喝采", src: "/sounds/live/cheer_jp_applause.mp3?v=jp3" },
+  { id: "jp_mixed", name: "オーディエンス大歓声", src: "/sounds/live/cheer_jp_mixed.mp3?v=jp3" },
 ];
 
 /**
