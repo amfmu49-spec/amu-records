@@ -33,6 +33,7 @@ type AudioPlayerContextType = {
   seekTo: (seconds: number) => void;
   togglePlay: () => void;
   toggleRandom: () => void;
+  setIsRandom: (val: boolean) => void;
   playNextSong: () => void;
   playPrevSong: () => void;
   startRandomPlay: (songs: any[]) => void;
@@ -56,6 +57,7 @@ const AudioPlayerContext = createContext<AudioPlayerContextType>({
   seekTo: () => {},
   togglePlay: () => {},
   toggleRandom: () => {},
+  setIsRandom: () => {},
   playNextSong: () => {},
   playPrevSong: () => {},
   startRandomPlay: () => {},
@@ -954,6 +956,12 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     setIsRandom((prev) => !prev);
   }, []);
 
+  // ランダム再生モードの明示的セット
+  const setRandomExplicit = useCallback((val: boolean) => {
+    setIsRandom(val);
+    isRandomRef.current = val;
+  }, []);
+
   // --- 高精度・快適シークバー操作（Pointer Events対応） ---
   const calculateProgressFromPointer = (e: React.PointerEvent<HTMLDivElement> | PointerEvent) => {
     if (!progressBarRef.current) return 0;
@@ -1161,6 +1169,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         seekTo,
         togglePlay,
         toggleRandom,
+        setIsRandom: setRandomExplicit,
         playNextSong,
         playPrevSong,
         startRandomPlay,

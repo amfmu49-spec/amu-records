@@ -37,6 +37,11 @@ export default function LiveStagePage() {
     playNextSong,
     playPrevSong,
     playSong,
+    isRandom,
+    toggleRandom,
+    setIsRandom,
+    startRandomPlay,
+    setPlaylist,
     isLiveMode,
     toggleLiveMode,
     triggerCheer,
@@ -64,7 +69,7 @@ export default function LiveStagePage() {
   const textIdRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // 初回ロード：ローカルストレージから総ブースト復元 ＆ LIVEモード強制ON
+  // 初回ロード：ローカルストレージから総ブースト復元 ＆ LIVEモード強制ON ＆ デフォルトランダム再生ON
   useEffect(() => {
     try {
       const saved = localStorage.getItem("amu_live_total_boosts");
@@ -75,33 +80,35 @@ export default function LiveStagePage() {
     if (!isLiveMode) {
       toggleLiveMode();
     }
-  }, [isLiveMode, toggleLiveMode]);
 
-  // 利用可能な楽曲一覧をロード
+    // LIVEモードはデフォルトでランダム再生
+    if (!isRandom) {
+      setIsRandom(true);
+    }
+  }, [isLiveMode, toggleLiveMode, isRandom, setIsRandom]);
+
+  // 利用可能な楽曲一覧をロード＆デフォルトランダム選曲で再生開始
   useEffect(() => {
     const supabase = createClient();
     supabase
       .from("songs")
       .select("*, profiles:profiles!fk_user_profile(*)")
       .order("play_count", { ascending: false })
-      .limit(30)
+      .limit(50)
       .then(({ data }) => {
-        if (data) {
+        if (data && data.length > 0) {
           setAvailableSongs(data);
-          // まだ曲が再生されていない場合、最初の曲を自動再生
-          if (!currentSong && data.length > 0) {
-            const first = data[0];
-            playSong({
-              id: first.id,
-              title: first.title,
-              file_url: first.file_url,
-              cover_url: first.cover_url,
-              artist: first.profiles?.artist_name || first.artist || "AMU Artist",
-            });
+          // まだ曲が再生されていない場合、全曲からランダムに選曲して再生開始！
+          if (!currentSong) {
+            startRandomPlay(data);
+          } else {
+            // すでに再生中の場合もLIVE用プレイリストを設定しランダムをON
+            setPlaylist(data);
+            setIsRandom(true);
           }
         }
       });
-  }, [currentSong, playSong]);
+  }, [currentSong, startRandomPlay, setPlaylist, setIsRandom]);
 
   // コンボリセットの監視（1.8秒放置でコンボ終了）
   const resetComboTimer = useCallback(() => {
@@ -474,8 +481,8 @@ export default function LiveStagePage() {
             {formatTime(currentTime)} / {formatTime(duration)}
           </div>
 
-          {/* 中央：再生・前・次コントロール */}
-          <div className="flex items-center gap-4 mx-auto">
+          {/* 中央：再生・前・次・シャッフルコントロール */}
+          <div className="flex items-center gap-3 sm:gap-4 mx-auto">
             {/* 前の曲 */}
             <button
               type="button"
@@ -516,6 +523,25 @@ export default function LiveStagePage() {
               <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
                 <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
               </svg>
+            </button>
+
+            {/* シャッフル / ランダム切り替えボタン */}
+            <button
+              type="button"
+              onClick={toggleRandom}
+              className={`p-2.5 rounded-full transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 ${
+                isRandom
+                  ? "bg-rose-600 text-white shadow-lg shadow-rose-600/40 border border-rose-400"
+                  : "bg-white/10 hover:bg-white/20 text-slate-400 border border-transparent"
+              }`}
+              title={isRandom ? "ランダム再生 ON" : "ランダム再生 OFF"}
+            >
+              <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/>
+              </svg>
+              <span className="text-[10px] font-black hidden sm:inline">
+                {isRandom ? "RANDOM ON" : "RANDOM OFF"}
+              </span>
             </button>
           </div>
 
@@ -570,13 +596,17 @@ export default function LiveStagePage() {
                     key={s.id}
                     type="button"
                     onClick={() => {
-                      playSong({
-                        id: s.id,
-                        title: s.title,
-                        file_url: s.file_url,
-                        cover_url: s.cover_url,
-                        artist: s.profiles?.artist_name || s.artist || "AMU Artist",
-                      });
+                      playSong(
+                        {
+                          id: s.id,
+                          title: s.title,
+                          file_url: s.file_url,
+                          cover_url: s.cover_url,
+                          artist: s.profiles?.artist_name || s.artist || "AMU Artist",
+                        },
+                        availableSongs
+                      );
+                      setIsRandom(true);
                       setIsSongPickerOpen(false);
                     }}
                     className={`w-full p-2.5 rounded-2xl flex items-center gap-3 transition-all text-left cursor-pointer ${
