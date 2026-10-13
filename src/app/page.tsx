@@ -145,18 +145,41 @@ export default async function Home() {
           {/* ランダムに選ばれた曲の大型プレイヤー */}
           <HeroPlayer song={randomSong} />
 
-          <div className="grid grid-cols-1 gap-10 sm:gap-16 min-w-0 mt-4 sm:mt-8">
-            {/* 1. 最新のトラック（ユーザー要望により一番上に配置 & 5曲まで表示） */}
+          {/* ライブモード入り口 ＆ ランダム再生バー（最新のトラックの上に配置） */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-slate-900 border border-rose-500/30 shadow-xl relative overflow-hidden group mt-4 sm:mt-6 mb-2">
+            <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 via-pink-600/10 to-purple-600/20 opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none" />
+            
+            {/* ライブモード専用ステージへ */}
+            <Link
+              href="/live"
+              className="relative z-10 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-gradient-to-r from-red-600 via-rose-600 to-purple-600 hover:from-red-500 hover:to-purple-500 text-white font-black text-xs sm:text-sm md:text-base shadow-lg shadow-rose-600/30 transition-all active:scale-95 group/btn cursor-pointer border border-white/20 select-none"
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping" />
+              <span>🏟️ LIVEステージモード</span>
+              <span className="hidden sm:inline-flex items-center text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-black/30 font-bold border border-white/20 text-rose-200">
+                客席視点・BOOST連打
+              </span>
+              <svg className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+
+            {/* その横に並べるランダム再生 */}
+            <div className="relative z-10 flex items-center gap-2">
+              <RandomPlayButton songs={songs || []} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-10 sm:gap-16 min-w-0 mt-4 sm:mt-6">
+            {/* 1. 最新のトラック（5曲まで表示） */}
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-6 sm:mb-8">
+              <div className="flex items-center justify-between gap-3 mb-6 sm:mb-8">
                 <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2.5 sm:gap-3 text-slate-800 tracking-tight">
                   <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200">
                     <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                   </span>
                   最新のトラック
                 </h2>
-                
-                <RandomPlayButton songs={songs || []} />
               </div>
               
               <TrackList songs={songs || []} currentUserId={user?.id} limit={5} />
