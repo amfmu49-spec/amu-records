@@ -277,6 +277,10 @@ export default function ProfilePage() {
   const [editSyncedLyrics, setEditSyncedLyrics] = useState("");
   const [editYoutubeUrl, setEditYoutubeUrl] = useState("");
   const [editTiktokUrl, setEditTiktokUrl] = useState("");
+  const [editCoverFile, setEditCoverFile] = useState<File | null>(null);
+  const [editCoverPreview, setEditCoverPreview] = useState<string | null>(null);
+  const [removeCover, setRemoveCover] = useState(false);
+  const [isUpdatingSong, setIsUpdatingSong] = useState(false);
 
   const handleDeleteSong = async (song: any) => {
     if (!user) return;
@@ -492,6 +496,9 @@ export default function ProfilePage() {
     setEditSyncedLyrics(song.synced_lyrics || "");
     setEditYoutubeUrl(song.youtube_url || "");
     setEditTiktokUrl(song.tiktok_url || "");
+    setEditCoverFile(null);
+    setEditCoverPreview(song.cover_url || null);
+    setRemoveCover(false);
   };
 
   const handleUpdateSong = async (songId: string) => {
@@ -501,64 +508,92 @@ export default function ProfilePage() {
       return;
     }
 
-    const updatePayload: any = {
-      title: editTitle.trim(),
-      description: editDescription.trim(),
-      co_artist_id_1: editCoArtist1 || null,
-      co_artist_id_2: editCoArtist2 || null,
-      synced_lyrics: editSyncedLyrics.trim() || null,
-      youtube_url: editYoutubeUrl.trim() || null,
-      tiktok_url: editTiktokUrl.trim() || null,
-    };
+    try {
+      setIsUpdatingSong(true);
+      let newCoverUrl = editCoverPreview;
 
-    // 本人の曲のみ更新 (user_id = user.id)
-    let { error } = await supabase
-      .from("songs")
-      .update(updatePayload)
-      .eq("id", songId)
-      .eq("user_id", user.id);
+      // 新しいカバー画像ファイルが選択されている場合、アップロード
+      if (editCoverFile) {
+        const coverExt = editCoverFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const uniqueCoverName = `${uuidv4()}.${coverExt}`;
+        const coverPath = `${user.id}/covers/${uniqueCoverName}`;
+        const { error: coverError } = await supabase.storage.from("songs").upload(coverPath, editCoverFile, {
+          contentType: editCoverFile.type || "image/jpeg",
+          upsert: true,
+        });
+        if (coverError) throw new Error("カバー画像のアップロードに失敗しました: " + coverError.message);
 
-    // カラム未追加時のフォールバック
-    if (
-      error &&
-      (error.message?.includes("synced_lyrics") ||
-        error.message?.includes("youtube_url") ||
-        error.message?.includes("tiktok_url") ||
-        error.details?.includes("synced_lyrics") ||
-        error.code === "PGRST204")
-    ) {
-      delete updatePayload.synced_lyrics;
-      delete updatePayload.youtube_url;
-      delete updatePayload.tiktok_url;
-      const retry = await supabase
+        const { data: { publicUrl: url } } = supabase.storage.from("songs").getPublicUrl(coverPath);
+        newCoverUrl = url;
+      } else if (removeCover) {
+        newCoverUrl = null;
+      }
+
+      const updatePayload: any = {
+        title: editTitle.trim(),
+        description: editDescription.trim(),
+        cover_url: newCoverUrl,
+        co_artist_id_1: editCoArtist1 || null,
+        co_artist_id_2: editCoArtist2 || null,
+        synced_lyrics: editSyncedLyrics.trim() || null,
+        youtube_url: editYoutubeUrl.trim() || null,
+        tiktok_url: editTiktokUrl.trim() || null,
+      };
+
+      // 本人の曲のみ更新 (user_id = user.id)
+      let { error } = await supabase
         .from("songs")
         .update(updatePayload)
         .eq("id", songId)
         .eq("user_id", user.id);
-      error = retry.error;
-    }
 
-    if (error) {
-      alert("更新に失敗しました: " + error.message);
-    } else {
-      setMySongs(
-        mySongs.map((s) =>
-          s.id === songId
-            ? {
-                ...s,
-                title: editTitle.trim(),
-                description: editDescription.trim(),
-                co_artist_id_1: editCoArtist1 || null,
-                co_artist_id_2: editCoArtist2 || null,
-                synced_lyrics: editSyncedLyrics.trim() || null,
-                youtube_url: editYoutubeUrl.trim() || null,
-                tiktok_url: editTiktokUrl.trim() || null,
-              }
-            : s
-        )
-      );
-      setEditingSongId(null);
-      alert("楽曲情報を更新しました！");
+      // カラム未追加時のフォールバック
+      if (
+        error &&
+        (error.message?.includes("synced_lyrics") ||
+          error.message?.includes("youtube_url") ||
+          error.message?.includes("tiktok_url") ||
+          error.details?.includes("synced_lyrics") ||
+          error.code === "PGRST204")
+      ) {
+        delete updatePayload.synced_lyrics;
+        delete updatePayload.youtube_url;
+        delete updatePayload.tiktok_url;
+        const retry = await supabase
+          .from("songs")
+          .update(updatePayload)
+          .eq("id", songId)
+          .eq("user_id", user.id);
+        error = retry.error;
+      }
+
+      if (error) {
+        alert("更新に失敗しました: " + error.message);
+      } else {
+        setMySongs(
+          mySongs.map((s) =>
+            s.id === songId
+              ? {
+                  ...s,
+                  title: editTitle.trim(),
+                  description: editDescription.trim(),
+                  cover_url: newCoverUrl,
+                  co_artist_id_1: editCoArtist1 || null,
+                  co_artist_id_2: editCoArtist2 || null,
+                  synced_lyrics: editSyncedLyrics.trim() || null,
+                  youtube_url: editYoutubeUrl.trim() || null,
+                  tiktok_url: editTiktokUrl.trim() || null,
+                }
+              : s
+          )
+        );
+        setEditingSongId(null);
+        alert("楽曲情報とカバーアートを更新しました！");
+      }
+    } catch (err: any) {
+      alert("エラー: " + (err?.message || err));
+    } finally {
+      setIsUpdatingSong(false);
     }
   };
 
@@ -1247,11 +1282,83 @@ export default function ProfilePage() {
                         </div>
                       </div>
 
+                      {/* カバーアート (ジャケット画像) の追加・修正 */}
+                      <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                        <label className="block text-xs font-bold text-slate-700 flex items-center justify-between">
+                          <span>🖼️ カバーアート (ジャケット画像)</span>
+                          {editCoverPreview && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditCoverFile(null);
+                                setEditCoverPreview(null);
+                                setRemoveCover(true);
+                              }}
+                              className="text-[11px] text-rose-500 hover:text-rose-700 hover:underline font-bold"
+                            >
+                              画像を削除
+                            </button>
+                          )}
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <div className="w-16 h-16 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center">
+                            {editCoverPreview ? (
+                              <img src={editCoverPreview} alt="Preview" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-bold">NO IMG</span>
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp,image/gif"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  if (!file.type.startsWith("image/")) {
+                                    alert("画像ファイルを選択してください。");
+                                    return;
+                                  }
+                                  if (file.size > 10 * 1024 * 1024) {
+                                    alert("画像サイズは10MB以下にしてください。");
+                                    return;
+                                  }
+                                  setEditCoverFile(file);
+                                  setRemoveCover(false);
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    setEditCoverPreview(reader.result as string);
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                              className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1">※ JPG / PNG / WebP（最大10MB）</p>
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="flex items-center gap-2 pt-2">
-                        <button onClick={() => handleUpdateSong(song.id)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-colors">
-                          保存
+                        <button
+                          onClick={() => handleUpdateSong(song.id)}
+                          disabled={isUpdatingSong}
+                          className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-colors flex items-center gap-1.5"
+                        >
+                          {isUpdatingSong ? (
+                            <>
+                              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              <span>保存中...</span>
+                            </>
+                          ) : (
+                            <span>保存</span>
+                          )}
                         </button>
-                        <button onClick={() => setEditingSongId(null)} className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-1.5 rounded-lg text-sm font-bold transition-colors">
+                        <button
+                          onClick={() => setEditingSongId(null)}
+                          disabled={isUpdatingSong}
+                          className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-1.5 rounded-lg text-sm font-bold transition-colors"
+                        >
                           キャンセル
                         </button>
                       </div>

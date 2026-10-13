@@ -6,6 +6,8 @@ import { createClient } from "@/utils/supabase/client";
 import { preloadAudioToCache } from "@/utils/audioCache";
 import { toCdnUrl } from "@/utils/cdn";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { v4 as uuidv4 } from "uuid";
 import UserRoleBadge from "@/components/UserRoleBadge";
 import AddToPlaylistModal from "@/components/AddToPlaylistModal";
 
@@ -38,6 +40,67 @@ export default function SongDetailHero({
   const [copied, setCopied] = useState(false);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
 
+  const router = useRouter();
+  const [coverUrl, setCoverUrl] = useState<string | null>(song.cover_url || null);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isAuthor = Boolean(
+    currentUserId && (
+      currentUserId === song.user_id ||
+      currentUserId === song.co_artist_id_1 ||
+      currentUserId === song.co_artist_id_2
+    )
+  );
+
+  const handleCoverFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUserId) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("画像ファイル（JPG, PNG, WebP等）を選択してください。");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert("画像サイズは10MB以下にしてください。");
+      return;
+    }
+
+    try {
+      setIsUploadingCover(true);
+      const coverExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const uniqueCoverName = `${uuidv4()}.${coverExt}`;
+      const coverPath = `${song.user_id || currentUserId}/covers/${uniqueCoverName}`;
+
+      const { error: uploadError } = await supabase.storage.from("songs").upload(coverPath, file, {
+        contentType: file.type || "image/jpeg",
+        upsert: true,
+      });
+
+      if (uploadError) throw new Error("画像のアップロードに失敗しました: " + uploadError.message);
+
+      const { data: { publicUrl } } = supabase.storage.from("songs").getPublicUrl(coverPath);
+
+      const { error: dbError } = await supabase
+        .from("songs")
+        .update({ cover_url: publicUrl })
+        .eq("id", song.id);
+
+      if (dbError) throw new Error("DBの更新に失敗しました: " + dbError.message);
+
+      setCoverUrl(publicUrl);
+      alert("カバーアートを更新しました！");
+      router.refresh();
+    } catch (err: any) {
+      console.error("Cover upload error:", err);
+      alert("カバーアートの更新に失敗しました: " + (err.message || err));
+    } finally {
+      setIsUploadingCover(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const isThisPlaying = currentSong?.id === song.id && isPlaying;
 
   const artists = [
@@ -55,7 +118,7 @@ export default function SongDetailHero({
       id: song.id,
       title: song.title,
       file_url: song.file_url,
-      cover_url: song.cover_url,
+      cover_url: coverUrl,
       artist: artistName,
       user_id: song.user_id,
       co_artist_id_1: song.co_artist_id_1,
@@ -137,21 +200,64 @@ export default function SongDetailHero({
         {/* レコード風カバーアート */}
         <div className="relative shrink-0 group">
           <div className="w-56 h-56 sm:w-72 sm:h-72 rounded-2xl sm:rounded-3xl bg-slate-800 shadow-2xl overflow-hidden border-2 border-white/10 relative">
-            {song.cover_url ? (
+            {coverUrl ? (
               <img
-                src={toCdnUrl(song.cover_url)}
+                src={toCdnUrl(coverUrl)}
                 alt={song.title}
                 className={`w-full h-full object-cover transition-transform duration-700 ${
                   isThisPlaying ? "scale-105" : "group-hover:scale-105"
                 }`}
               />
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-slate-500 gap-3">
-                <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-slate-500 gap-3 p-4 text-center">
+                <svg className="w-14 h-14 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                 </svg>
-                <span className="text-xs font-bold uppercase tracking-wider">No Artwork</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">No Artwork</span>
+                {isAuthor && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingCover}
+                    className="mt-1 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>📷</span>
+                    <span>カバー画像を追加</span>
+                  </button>
+                )}
               </div>
+            )}
+
+            {/* 作者向け：カバーアート変更ボタン */}
+            {isAuthor && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={handleCoverFileChange}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingCover}
+                  className="absolute bottom-2.5 right-2.5 sm:bottom-3 sm:right-3 px-3 py-1.5 rounded-xl bg-slate-900/85 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 backdrop-blur-md border border-white/20 shadow-xl cursor-pointer transition-all hover:scale-105 active:scale-95 z-30"
+                  title="カバーアートを変更・追加"
+                >
+                  {isUploadingCover ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>保存中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>📷</span>
+                      <span>{coverUrl ? "カバー変更" : "カバー追加"}</span>
+                    </>
+                  )}
+                </button>
+              </>
             )}
 
             {/* 再生中オーバーレイ */}
