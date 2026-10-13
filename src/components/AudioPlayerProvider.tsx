@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { getCachedAudioUrl, preloadAudioToCache } from "@/utils/audioCache";
 import { toCdnUrl } from "@/utils/cdn";
@@ -153,6 +154,7 @@ const normalizeSong = (item: any): Song => {
 };
 
 export default function AudioPlayerProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRandom, setIsRandom] = useState(false);
@@ -298,7 +300,37 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     }
   }, []);
 
-  // 歓声SEの再生（毎回異なるバリエーションからランダム選出）
+  // オーディオ要素を滑らかにフェードアウトさせて安全に停止するヘルパー（ぶつ切り完全防止）
+  const fadeOutAudio = useCallback((audio: HTMLAudioElement | null, durationMs = 800) => {
+    if (!audio) return;
+    const startVolume = audio.volume;
+    if (startVolume <= 0.02) {
+      try { audio.pause(); } catch {}
+      return;
+    }
+
+    const steps = 25;
+    const stepInterval = durationMs / steps;
+    let step = 0;
+
+    const interval = setInterval(() => {
+      step++;
+      const ratio = 1 - (step / steps);
+      try {
+        audio.volume = Math.max(0, startVolume * ratio);
+      } catch {}
+
+      if (step >= steps || audio.volume <= 0.01) {
+        clearInterval(interval);
+        try {
+          audio.pause();
+          audio.volume = 0;
+        } catch {}
+      }
+    }, stepInterval);
+  }, []);
+
+  // 歓声SEの再生（毎回異なるバリエーションからランダム選出 ＆ ぶつ切り防止フェードアウト）
   const playLiveCheer = useCallback((isSongStart = true) => {
     if (typeof window === "undefined") return;
 
@@ -313,16 +345,13 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       setCurrentCheerToast((prev) => (prev?.id === chosen.id ? null : prev));
     }, 3200);
 
-    // 以前の歓声再生をクリア
+    // 以前の歓声再生がある場合は、即座に切らず滑らかにフェードアウト！
     if (cheerFadeIntervalRef.current) {
       clearInterval(cheerFadeIntervalRef.current);
       cheerFadeIntervalRef.current = null;
     }
     if (cheerAudioRef.current) {
-      try {
-        cheerAudioRef.current.pause();
-        cheerAudioRef.current.currentTime = 0;
-      } catch {}
+      fadeOutAudio(cheerAudioRef.current, 500);
     }
 
     try {
@@ -336,25 +365,29 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         p.catch((e) => console.warn("Live cheer play note:", e));
       }
 
-      // 演奏開始時：2.5秒間しっかり会場が沸き立ち、その後3秒かけて演奏に溶け込むように自然にフェードアウト！
+      // 演奏開始時：2.0秒間しっかり会場が沸き立ち、その後約3.5秒かけて自然な減衰で余韻がフェードアウト！
       if (isSongStart) {
-        const holdMs = 2500;
-        const fadeMs = 3000;
-        const steps = 30;
+        const holdMs = 2000;
+        const fadeMs = 3800;
+        const steps = 40;
         const stepInterval = fadeMs / steps;
 
         setTimeout(() => {
           let step = 0;
           cheerFadeIntervalRef.current = setInterval(() => {
             step++;
-            const ratio = 1 - step / steps;
+            const t = step / steps;
+            // 自然な音響減衰カーブ（指数フェードアウト）
+            const decay = Math.pow(1 - t, 1.8);
             if (audio) {
-              audio.volume = Math.max(0, 0.65 * ratio);
+              audio.volume = Math.max(0, 0.65 * decay);
             }
-            if (step >= steps) {
+            if (step >= steps || (audio && audio.volume <= 0.01)) {
               clearInterval(cheerFadeIntervalRef.current);
               cheerFadeIntervalRef.current = null;
-              try { audio.pause(); } catch {}
+              if (audio) {
+                try { audio.pause(); } catch {}
+              }
             }
           }, stepInterval);
         }, holdMs);
@@ -362,7 +395,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     } catch (e) {
       console.warn("Cheer audio play error:", e);
     }
-  }, []);
+  }, [fadeOutAudio]);
 
   // LIVEモードのON/OFF切り替え
   const toggleLiveMode = useCallback(() => {
@@ -382,14 +415,14 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       if (next) {
         playLiveCheer(true);
       } else {
-        // OFFにした時は鳴っている歓声も止める
+        // OFFにした時は鳴っている歓声も滑らかにフェードアウト
         if (cheerAudioRef.current) {
-          try { cheerAudioRef.current.pause(); } catch {}
+          fadeOutAudio(cheerAudioRef.current, 600);
         }
       }
       return next;
     });
-  }, [initWebAudio, updateReverbState, playLiveCheer]);
+  }, [initWebAudio, updateReverbState, playLiveCheer, fadeOutAudio]);
 
   // 手動で歓声を送る（ライブ中にペンライトを振るような感覚）
   const triggerCheer = useCallback(() => {
@@ -904,7 +937,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       activeAudio.pause();
       setIsPlaying(false);
       if (cheerAudioRef.current) {
-        try { cheerAudioRef.current.pause(); } catch {}
+        fadeOutAudio(cheerAudioRef.current, 500);
       }
     } else {
       activeAudio.play().catch((e) => console.warn("Toggle play failed:", e));
@@ -914,7 +947,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         playLiveCheer(true);
       }
     }
-  }, [currentSong, isPlaying, initWebAudio, playLiveCheer]);
+  }, [currentSong, isPlaying, initWebAudio, playLiveCheer, fadeOutAudio]);
 
   // ランダム再生モードのトグル
   const toggleRandom = useCallback(() => {
@@ -1141,8 +1174,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       <audio ref={audioRefA} crossOrigin="anonymous" playsInline preload="auto" />
       <audio ref={audioRefB} crossOrigin="anonymous" playsInline preload="auto" />
 
-      {/* グローバルプレイヤー（画面下部固定：太めで洗練されたデザイン） */}
-      {currentSong && (
+      {/* グローバルプレイヤー（画面下部固定：/live ページでは専用UIがあるため非表示） */}
+      {currentSong && pathname !== "/live" && (
         <div className={`fixed bottom-0 left-0 w-full backdrop-blur-2xl border-t transition-all duration-300 z-[80] ${
           isLiveMode
             ? "bg-slate-950/95 border-rose-500/30 shadow-[0_-10px_40px_rgba(225,29,72,0.15)] text-white"
@@ -1337,11 +1370,13 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 </span>
               )}
 
-              {/* LIVEモード トグルボタン */}
-              <button
-                type="button"
-                onClick={toggleLiveMode}
-                title={isLiveMode ? "LIVEモード中 (ホール音響＆歓声 ON)" : "LIVEモードに切り替える (ホール音響＆歓声)"}
+              {/* LIVEモード専用ステージへ遷移するボタン */}
+              <Link
+                href="/live"
+                onClick={() => {
+                  if (!isLiveMode) toggleLiveMode();
+                }}
+                title="客席視点のライブステージ画面へ！"
                 className={`relative px-2.5 sm:px-3 py-1.5 rounded-full font-black text-[10px] sm:text-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 border select-none ${
                   isLiveMode
                     ? "bg-gradient-to-r from-red-600 via-rose-600 to-purple-600 text-white border-transparent shadow-lg shadow-rose-500/30 ring-2 ring-rose-400/50"
@@ -1350,8 +1385,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
               >
                 <span className={`w-2 h-2 rounded-full shrink-0 ${isLiveMode ? "bg-white animate-pulse" : "bg-slate-400"}`} />
                 <span>LIVE</span>
-                {isLiveMode && <span className="text-[10px] hidden sm:inline">🏟️</span>}
-              </button>
+                <span className="text-[10px] hidden sm:inline">🏟️</span>
+              </Link>
 
               {/* LIVEモード中のみ出現する「歓声を送る👏」ミニボタン */}
               {isLiveMode && isPlaying && (
