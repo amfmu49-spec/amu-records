@@ -27,12 +27,76 @@ interface FloatingText {
   color: string;
 }
 
+const SLOT_COUNT = 40;
+
+// 曲ごとの自然な初期盛り上がり波形（サビ付近が盛り上がるシード生成）
+function generateInitialTimeline(songId: string): number[] {
+  let seed = 0;
+  for (let i = 0; i < songId.length; i++) {
+    seed = (seed * 31 + songId.charCodeAt(i)) & 0xffffff;
+  }
+  return Array.from({ length: SLOT_COUNT }, (_, i) => {
+    const progress = i / (SLOT_COUNT - 1);
+    const chorusPeak = Math.exp(-Math.pow((progress - 0.65) / 0.16, 2)) * 7;
+    const bridgePeak = Math.exp(-Math.pow((progress - 0.35) / 0.12, 2)) * 3.5;
+    const introWave = Math.sin(progress * Math.PI * 2) * 1.5;
+    const variance = ((seed + i * 19) % 7) * 0.4;
+    return Math.max(1, Math.round(2 + chorusPeak + bridgePeak + introWave + variance));
+  });
+}
+
+// Catmull-Rom スプライン補間による滑らかな折れ線・エリアパス生成
+function generateWavePaths(data: number[], width = 400, height = 44) {
+  if (!data || data.length === 0) return { linePath: "", areaPath: "", peakIndex: 0, points: [] };
+  const maxVal = Math.max(...data, 10);
+  const paddingBottom = 4;
+  const paddingTop = 6;
+  const availableH = height - paddingTop - paddingBottom;
+
+  const points = data.map((val, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const ratio = Math.min(1, val / maxVal);
+    const y = height - paddingBottom - ratio * availableH;
+    return { x, y };
+  });
+
+  let peakIndex = 0;
+  let maxV = -1;
+  data.forEach((v, i) => {
+    if (v > maxV) {
+      maxV = v;
+      peakIndex = i;
+    }
+  });
+
+  let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i === 0 ? 0 : i - 1];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2 >= points.length ? points.length - 1 : i + 2];
+
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+    d += ` C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)}, ${cp2x.toFixed(2)} ${cp2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+  }
+
+  const linePath = d;
+  const areaPath = `${d} L ${width} ${height} L 0 ${height} Z`;
+
+  return { linePath, areaPath, peakIndex, points };
+}
+
 export default function LiveStagePage() {
   const {
     currentSong,
     isPlaying,
     currentTime,
     duration,
+    seekTo,
     togglePlay,
     playNextSong,
     playPrevSong,
@@ -54,6 +118,10 @@ export default function LiveStagePage() {
   const [maxCombo, setMaxCombo] = useState<number>(0);
   const [isScreenShaking, setIsScreenShaking] = useState(false);
   const [isStageFlashing, setIsStageFlashing] = useState(false);
+
+  // タイムライン（折れ線グラフ／ヒートマップ）状態
+  const [timelineData, setTimelineData] = useState<number[]>([]);
+  const lastPlayedSongIdRef = useRef<string | null>(null);
 
   // 選曲ドロワー／モーダル
   const [isSongPickerOpen, setIsSongPickerOpen] = useState(false);
@@ -83,16 +151,38 @@ export default function LiveStagePage() {
     }
   }, [isLiveMode, toggleLiveMode, isRandom, setIsRandom]);
 
-  // 再生中の曲が変わるたびに、その曲固有のトータルブースト数を復元
+  // 再生中の曲が変わるたびに、その曲固有のトータルブースト数＆タイムラインを復元 ＆ 歓声で盛り上げる！
   useEffect(() => {
     if (!currentSong?.id) return;
+
+    // トータルブースト数の復元
     try {
       const saved = localStorage.getItem(`amu_live_song_boosts_${currentSong.id}`);
       setTotalBoosts(saved ? parseInt(saved, 10) || 0 : 0);
     } catch {
       setTotalBoosts(0);
     }
-  }, [currentSong?.id]);
+
+    // タイムラインヒートマップの復元
+    try {
+      const savedTl = localStorage.getItem(`amu_live_song_timeline_${currentSong.id}`);
+      if (savedTl) {
+        setTimelineData(JSON.parse(savedTl));
+      } else {
+        setTimelineData(generateInitialTimeline(currentSong.id));
+      }
+    } catch {
+      setTimelineData(generateInitialTimeline(currentSong.id));
+    }
+
+    // 楽曲が始まったら歓声で会場が沸き立ちフェードアウト！
+    if (lastPlayedSongIdRef.current !== currentSong.id) {
+      lastPlayedSongIdRef.current = currentSong.id;
+      if (isLiveMode) {
+        triggerCheer();
+      }
+    }
+  }, [currentSong?.id, isLiveMode, triggerCheer]);
 
   // 利用可能な楽曲一覧をロード＆デフォルトランダム選曲で再生開始
   useEffect(() => {
@@ -137,6 +227,24 @@ export default function LiveStagePage() {
       }
       return next;
     });
+
+    // タイムラインヒートマップ（折れ線グラフ波形）をリアルタイムに加算！
+    if (currentSong?.id && duration > 0) {
+      const progressRatio = Math.min(1, Math.max(0, currentTime / duration));
+      const slotIdx = Math.min(SLOT_COUNT - 1, Math.max(0, Math.floor(progressRatio * SLOT_COUNT)));
+
+      setTimelineData((prev) => {
+        const next = prev.length === SLOT_COUNT ? [...prev] : generateInitialTimeline(currentSong.id);
+        next[slotIdx] = (next[slotIdx] || 0) + 1;
+        // 隣接スロットにも熱気（山）を少し伝播して滑らかな山にする
+        if (slotIdx > 0) next[slotIdx - 1] = (next[slotIdx - 1] || 0) + 0.35;
+        if (slotIdx < SLOT_COUNT - 1) next[slotIdx + 1] = (next[slotIdx + 1] || 0) + 0.35;
+        try {
+          localStorage.setItem(`amu_live_song_timeline_${currentSong.id}`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }
 
     const newCombo = combo + 1;
     setCombo(newCombo);
@@ -286,6 +394,24 @@ export default function LiveStagePage() {
     (s.artist || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // 折れ線グラフ（SVG波形）のパス計算
+  const waveData = generateWavePaths(timelineData, 400, 44);
+  const progressRatio = duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
+
+  // シークバータップ／クリック時のジャンプ処理
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clientX =
+      "touches" in e && (e as any).touches && (e as any).touches.length > 0
+        ? (e as any).touches[0].clientX
+        : (e as React.MouseEvent).clientX;
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    if (duration > 0) {
+      seekTo(ratio * duration);
+    }
+  };
+
   return (
     <div
       onPointerDown={handleBoost}
@@ -399,7 +525,7 @@ export default function LiveStagePage() {
         </div>
       </div>
 
-      {/* ────────── [中央セクション] 画面タップ連打ライブ空間 ＆ コンボ ＆ 曲別ブースト ────────── */}
+      {/* ────────── [中央セクション] 画面タップ連打ライブ空間 ＆ コンボ ＆ おしゃれなBOOST HUD ────────── */}
       <div className="relative z-30 flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto px-4 my-auto min-h-0 pointer-events-none">
         {/* 歓声トースト演出（日本人オーディエンスの歓声が発生した時） */}
         {currentCheerToast && (
@@ -430,52 +556,183 @@ export default function LiveStagePage() {
           </div>
         )}
 
-        {/* この曲の総ブースト数カウンター ＆ 歓声ボタン */}
+        {/* ★ この曲の総ブースト数：超おしゃれなネオンHUDスタイル */}
         <div
           onPointerDown={(e) => e.stopPropagation()}
-          className="flex flex-col items-center gap-2 pointer-events-auto"
+          className="relative group flex items-center gap-3.5 px-5 sm:px-6 py-2.5 rounded-2xl bg-black/75 border border-rose-500/40 backdrop-blur-xl shadow-[0_0_35px_rgba(244,63,94,0.3)] pointer-events-auto transition-transform active:scale-95"
         >
-          {/* この曲の総ブースト数 */}
-          <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/90 border border-rose-500/50 backdrop-blur-md shadow-2xl">
-            <span className="text-[11px] sm:text-xs text-slate-300 font-bold">この曲のBOOST:</span>
-            <span className="text-base sm:text-lg font-black text-amber-300 font-mono tracking-wider">
-              {totalBoosts.toLocaleString()}
-            </span>
-            <span className="text-xs animate-pulse">🔥</span>
+          {/* ネオンパルスライト */}
+          <div className="relative flex items-center justify-center">
+            <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping opacity-75 absolute" />
+            <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-amber-400 to-rose-500 shadow-md shadow-rose-500" />
           </div>
 
-          {/* 日本人オーディエンス歓声・コール送信ボタン */}
-          <button
-            type="button"
-            onClick={() => triggerCheer()}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900/80 hover:bg-rose-950/80 border border-rose-500/50 backdrop-blur-md text-xs font-bold text-rose-300 transition-all active:scale-95 shadow-md shadow-rose-950/50 cursor-pointer"
-            title="日本人オーディエンスの歓声・コールを送る"
-          >
-            <span>👏</span>
-            <span>歓声・コールを送る</span>
-          </button>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-mono font-black tracking-[0.22em] text-rose-300/80 uppercase">
+                STAGE HEAT ENERGY
+              </span>
+              <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                LIVE
+              </span>
+            </div>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight bg-gradient-to-r from-amber-200 via-rose-300 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(244,63,94,0.7)]">
+                {totalBoosts.toLocaleString()}
+              </span>
+              <span className="text-[10px] font-black tracking-widest text-amber-300 font-mono">
+                BOOSTS
+              </span>
+            </div>
+          </div>
+
+          {/* セパレーター */}
+          <div className="h-7 w-px bg-gradient-to-b from-transparent via-rose-500/40 to-transparent mx-0.5" />
+
+          {/* 連打アイコン */}
+          <div className="flex flex-col items-center">
+            <span className="text-lg filter drop-shadow-[0_0_8px_rgba(251,191,36,0.8)] animate-pulse">
+              🔥
+            </span>
+          </div>
         </div>
 
         {/* 画面連打ガイドヒント */}
-        <div className="mt-4 text-[11px] sm:text-xs font-bold text-white/50 tracking-wider flex items-center gap-1.5 animate-pulse pointer-events-none select-none">
+        <div className="mt-3.5 text-[11px] sm:text-xs font-bold text-white/50 tracking-wider flex items-center gap-1.5 animate-pulse pointer-events-none select-none">
           <span>👆</span>
-          <span>画面のどこでもタップ・連打でBOOST！</span>
+          <span>画面のどこでも連打してライブを盛り上げよう！</span>
         </div>
       </div>
 
-      {/* ────────── [下部セクション] プレイヤーコントロールバー（アドレスバー被り解消のため上に引き上げ） ────────── */}
+      {/* ────────── [下部セクション] シークバー折れ線グラフ ＆ 完全中央コントロール ────────── */}
       <footer
         onPointerDown={(e) => e.stopPropagation()}
-        className="relative z-30 w-full shrink-0 pt-2 pb-24 sm:pb-8 pb-[max(5rem,calc(env(safe-area-inset-bottom)+3.5rem))] mb-4 sm:mb-0 bg-gradient-to-t from-black via-black/95 to-transparent flex flex-col items-center pointer-events-auto"
+        className="relative z-30 w-full shrink-0 pt-2 pb-6 sm:pb-5 pb-[max(1.8rem,calc(env(safe-area-inset-bottom)+0.8rem))] bg-gradient-to-t from-black via-black/95 to-transparent flex flex-col items-center pointer-events-auto"
       >
-        <div className="max-w-4xl w-full flex items-center justify-between gap-4">
-          {/* 左側：曲時間表示 */}
-          <div className="text-xs font-mono text-slate-400 hidden sm:block">
-            {formatTime(currentTime)} / {formatTime(duration)}
+        {/* ─── 1. 折れ線グラフ一体型シークバー（BOOST数連動ヒートマップ） ─── */}
+        <div className="w-full max-w-xl px-4 sm:px-6 mb-2.5 flex flex-col">
+          {/* 折れ線グラフSVGコンテナ */}
+          <div
+            onClick={handleSeek}
+            className="relative w-full h-11 sm:h-12 bg-slate-950/70 hover:bg-slate-900/80 rounded-xl border border-rose-500/40 backdrop-blur-md overflow-hidden cursor-pointer group shadow-[0_0_25px_rgba(244,63,94,0.2)] transition-all"
+            title="クリックして該当時間へスキップ"
+          >
+            {/* SVG折れ線グラフ波形 */}
+            <svg
+              viewBox="0 0 400 44"
+              preserveAspectRatio="none"
+              className="w-full h-full block"
+            >
+              <defs>
+                {/* エリアチャート用グラデーション（上部ネオンピンク、下部透明） */}
+                <linearGradient id="liveHeatGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#f43f5e" stopOpacity="0.75" />
+                  <stop offset="50%" stopColor="#ec4899" stopOpacity="0.35" />
+                  <stop offset="100%" stopColor="#881337" stopOpacity="0.02" />
+                </linearGradient>
+
+                {/* 未再生部分用グラデーション */}
+                <linearGradient id="liveHeatUnplayedGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#64748b" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="#1e293b" stopOpacity="0.05" />
+                </linearGradient>
+
+                {/* 折れ線ストローク用グラデーション */}
+                <linearGradient id="liveLineGrad" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#fb7185" />
+                  <stop offset="50%" stopColor="#f43f5e" />
+                  <stop offset="100%" stopColor="#fbbf24" />
+                </linearGradient>
+
+                {/* 再生済み領域クリップパス */}
+                <clipPath id="playedClip">
+                  <rect x="0" y="0" width={`${progressRatio * 400}`} height="44" />
+                </clipPath>
+              </defs>
+
+              {/* 背景：未再生エリア */}
+              {waveData.areaPath && (
+                <path
+                  d={waveData.areaPath}
+                  fill="url(#liveHeatUnplayedGrad)"
+                />
+              )}
+
+              {/* 前景：再生済みエリア（クリップされて鮮やかに発光） */}
+              {waveData.areaPath && (
+                <path
+                  d={waveData.areaPath}
+                  fill="url(#liveHeatGrad)"
+                  clipPath="url(#playedClip)"
+                />
+              )}
+
+              {/* 折れ線ストローク */}
+              {waveData.linePath && (
+                <path
+                  d={waveData.linePath}
+                  fill="none"
+                  stroke="url(#liveLineGrad)"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="filter drop-shadow-[0_0_5px_rgba(244,63,94,0.9)]"
+                />
+              )}
+            </svg>
+
+            {/* 最大盛り上がり地点（PEAK）マーカー */}
+            {waveData.points && waveData.points[waveData.peakIndex] && (
+              <div
+                className="absolute pointer-events-none transform -translate-x-1/2 flex flex-col items-center z-10"
+                style={{
+                  left: `${(waveData.peakIndex / (SLOT_COUNT - 1)) * 100}%`,
+                  top: "2px",
+                }}
+              >
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-500/90 text-[8px] font-black text-black tracking-tighter uppercase shadow-md flex items-center gap-0.5 animate-pulse">
+                  <span>🔥</span>
+                  <span>PEAK</span>
+                </span>
+              </div>
+            )}
+
+            {/* 現在の再生位置スキャンライン ＆ 光るThumb */}
+            <div
+              className="absolute top-0 bottom-0 pointer-events-none z-20 flex flex-col items-center transition-all duration-75"
+              style={{ left: `${progressRatio * 100}%` }}
+            >
+              {/* スキャン縦線 */}
+              <div className="w-0.5 h-full bg-gradient-to-b from-white via-rose-400 to-amber-300 shadow-[0_0_8px_rgba(255,255,255,0.9)]" />
+              {/* 光るドット */}
+              <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-rose-500 shadow-[0_0_10px_rgba(244,63,94,1)] transform scale-100 group-hover:scale-125 transition-transform" />
+            </div>
+
+            {/* シークバーホバー時のオーバーレイガイド */}
+            <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
           </div>
 
-          {/* 中央：再生・前・次・シャッフルコントロール */}
-          <div className="flex items-center gap-3 sm:gap-4 mx-auto">
+          {/* 波形下部のタイムスタンプ ＆ 操作ガイド */}
+          <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-400 mt-1 px-1">
+            <span className="text-rose-300">{formatTime(currentTime)}</span>
+            <span className="text-[9px] text-slate-500 tracking-wider">
+              📈 BOOSTヒートマップ（タップでジャンプ）
+            </span>
+            <span>{formatTime(duration)}</span>
+          </div>
+        </div>
+
+        {/* ─── 2. 再生コントロールバー（完全な左右数学的センター） ─── */}
+        <div className="relative w-full max-w-xl px-4 sm:px-6 flex items-center justify-center">
+          {/* 左端：曲時間（PC時のみ表示、絶対配置で中央ボタンに影響を与えない） */}
+          <div className="absolute left-4 sm:left-6 hidden sm:flex items-center gap-1.5 text-xs font-mono text-slate-400">
+            <span className="text-white font-bold">{formatTime(currentTime)}</span>
+            <span className="text-slate-600">/</span>
+            <span>{formatTime(duration)}</span>
+          </div>
+
+          {/* 中央：再生コントロール（左右完全均等センタリング） */}
+          <div className="flex items-center gap-3.5 sm:gap-5 justify-center">
             {/* 前の曲 */}
             <button
               type="button"
@@ -538,8 +795,8 @@ export default function LiveStagePage() {
             </button>
           </div>
 
-          {/* 右側：音響ステータスバッジ */}
-          <div className="hidden sm:flex items-center gap-2">
+          {/* 右端：音響ステータスバッジ（PC時のみ表示、絶対配置） */}
+          <div className="absolute right-4 sm:right-6 hidden sm:flex items-center gap-2">
             <span className="text-[11px] font-bold text-slate-400">ACOUSTIC:</span>
             <span className="px-2 py-0.5 rounded-full bg-rose-950/80 border border-rose-500/40 text-[10px] font-black text-rose-300">
               HALL REVERB ON

@@ -361,7 +361,8 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     try {
       const audio = new Audio(chosen.src);
       cheerAudioRef.current = audio;
-      audio.volume = 0.65;
+      const initialVol = 0.85;
+      audio.volume = initialVol;
       audio.currentTime = 0;
 
       const p = audio.play();
@@ -369,11 +370,11 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         p.catch((e) => console.warn("Live cheer play note:", e));
       }
 
-      // 演奏開始時：2.0秒間しっかり会場が沸き立ち、その後約3.5秒かけて自然な減衰で余韻がフェードアウト！
+      // 演奏開始時：1.8秒間しっかり大歓声が沸き立ち、その後4.2秒かけて自然に余韻がフェードアウト！
       if (isSongStart) {
-        const holdMs = 2000;
-        const fadeMs = 3800;
-        const steps = 40;
+        const holdMs = 1800;
+        const fadeMs = 4200;
+        const steps = 45;
         const stepInterval = fadeMs / steps;
 
         setTimeout(() => {
@@ -384,7 +385,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
             // 自然な音響減衰カーブ（指数フェードアウト）
             const decay = Math.pow(1 - t, 1.8);
             if (audio) {
-              audio.volume = Math.max(0, 0.65 * decay);
+              audio.volume = Math.max(0, initialVol * decay);
             }
             if (step >= steps || (audio && audio.volume <= 0.01)) {
               clearInterval(cheerFadeIntervalRef.current);
