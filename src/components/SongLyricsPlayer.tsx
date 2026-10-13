@@ -261,6 +261,9 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
         file_url: song.file_url,
         cover_url: song.cover_url || null,
         artist: song.artist,
+        user_id: song.user_id,
+        co_artist_id_1: song.co_artist_id_1,
+        co_artist_id_2: song.co_artist_id_2,
       });
       setTimeout(() => {
         seekTo(time);
@@ -281,6 +284,9 @@ export default function SongLyricsPlayer({ syncedLyrics, song }: SongLyricsPlaye
         file_url: song.file_url,
         cover_url: song.cover_url || null,
         artist: song.artist,
+        user_id: song.user_id,
+        co_artist_id_1: song.co_artist_id_1,
+        co_artist_id_2: song.co_artist_id_2,
       });
     }
   };

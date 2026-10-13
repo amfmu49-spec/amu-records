@@ -866,6 +866,9 @@ export default function LiveStagePage() {
                           file_url: s.file_url,
                           cover_url: s.cover_url,
                           artist: s.profiles?.artist_name || s.artist || "AMU Artist",
+                          user_id: s.user_id,
+                          co_artist_id_1: s.co_artist_id_1,
+                          co_artist_id_2: s.co_artist_id_2,
                         },
                         availableSongs
                       );

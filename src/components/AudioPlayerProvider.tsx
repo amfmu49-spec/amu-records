@@ -15,6 +15,9 @@ export type Song = {
   cover_url: string | null;
   artist?: string;
   synced_lyrics?: string | null;
+  user_id?: string;
+  co_artist_id_1?: string;
+  co_artist_id_2?: string;
 };
 
 type AudioPlayerContextType = {
@@ -128,6 +131,10 @@ const formatTime = (seconds: number) => {
 // 任意の曲オブジェクトを正規化
 const normalizeSong = (item: any): Song => {
   if (!item) return { id: "", title: "", file_url: "", cover_url: null, artist: "", synced_lyrics: null };
+  const userId = item.user_id || undefined;
+  const coArtist1 = item.co_artist_id_1 || undefined;
+  const coArtist2 = item.co_artist_id_2 || undefined;
+
   if (item.artist && item.file_url && typeof item.artist === "string") {
     return {
       id: item.id,
@@ -136,6 +143,9 @@ const normalizeSong = (item: any): Song => {
       cover_url: item.cover_url ? toCdnUrl(item.cover_url) : null,
       artist: item.artist,
       synced_lyrics: item.synced_lyrics || null,
+      user_id: userId,
+      co_artist_id_1: coArtist1,
+      co_artist_id_2: coArtist2,
     };
   }
 
@@ -154,6 +164,9 @@ const normalizeSong = (item: any): Song => {
     cover_url: item.cover_url ? toCdnUrl(item.cover_url) : null,
     artist: artistName,
     synced_lyrics: item.synced_lyrics || null,
+    user_id: userId,
+    co_artist_id_1: coArtist1,
+    co_artist_id_2: coArtist2,
   };
 };
 
@@ -437,6 +450,10 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
 
   // プレイヤー専用：ログインユーザー情報、現在の曲のいいね・コメント状態、サポーターランク情報
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const currentUserRef = useRef<any>(null);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
   const [currentLikes, setCurrentLikes] = useState<{ isLiked: boolean; count: number }>({ isLiked: false, count: 0 });
   const [currentCommentsCount, setCurrentCommentsCount] = useState<number>(0);
   const [supporterRankInfo, setSupporterRankInfo] = useState<SupporterRankInfo>(() => calculateSupporterRank([]));
@@ -518,10 +535,43 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
     }
   };
 
-  // 再生回数のインクリメント（同じ端末・ブラウザからは1曲につき1日1回のみカウント）
-  const incrementPlayCount = (songId: string) => {
+  // 再生回数のインクリメント（同じ端末・ブラウザからは1曲につき1日1回のみカウント。作者・コラボアーティスト本人の再生は除外）
+  const incrementPlayCount = async (song: Song) => {
     try {
-      if (typeof window === "undefined") return;
+      if (typeof window === "undefined" || !song?.id) return;
+
+      const songId = song.id;
+      const supabase = createClient();
+
+      // 現在のログインユーザーを取得
+      let currentUid = currentUserRef.current?.id || currentUser?.id;
+      if (!currentUid) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        currentUid = sessionData.session?.user?.id;
+      }
+
+      // 曲の作者情報を確認（songオブジェクトに無い場合はDBから即座に確認）
+      let songUserId = song.user_id;
+      let co1 = song.co_artist_id_1;
+      let co2 = song.co_artist_id_2;
+
+      if (currentUid && !songUserId) {
+        const { data: songData } = await supabase
+          .from("songs")
+          .select("user_id, co_artist_id_1, co_artist_id_2")
+          .eq("id", songId)
+          .single();
+        if (songData) {
+          songUserId = songData.user_id;
+          co1 = songData.co_artist_id_1;
+          co2 = songData.co_artist_id_2;
+        }
+      }
+
+      // 作者自身・コラボアーティスト自身による再生は再生回数にカウントしない（自演再生完全防止）
+      if (currentUid && (songUserId === currentUid || co1 === currentUid || co2 === currentUid)) {
+        return;
+      }
 
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -535,7 +585,6 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
 
       // 今日初めての再生：今日の日付を保存してカウントアップ
       localStorage.setItem(storageKey, todayStr);
-      const supabase = createClient();
       supabase.rpc("increment_play_count", { song_id_param: songId }).then();
     } catch (e) {
       console.warn("Failed to increment play count:", e);
@@ -613,7 +662,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       setCurrentTime(0);
       activeDeckRef.current = nextDeck; // 即座にUI更新先を切り替え
 
-      incrementPlayCount(nextSong.id);
+      incrementPlayCount(nextSong);
 
       const DURATION_MS = 3000; // 3.0秒間の滑らかなフェード
       const STEPS = 60; // 50msごとに滑らかに更新
@@ -739,7 +788,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       setProgress(0);
       setCurrentTime(0);
 
-      incrementPlayCount(song.id);
+      incrementPlayCount(song);
       historyRef.current.push(song.id);
       if (historyRef.current.length > 20) historyRef.current.shift();
 
@@ -790,7 +839,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
       setCurrentTime(0);
       activeDeckRef.current = nextDeck; // 即座にUI更新先を切り替え
 
-      incrementPlayCount(song.id);
+      incrementPlayCount(song);
 
       const DURATION_MS = 1000; // 手動スキップ時はキビキビとした1.0秒フェード
       const STEPS = 20; // 50msごとに更新

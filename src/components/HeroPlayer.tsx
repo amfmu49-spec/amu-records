@@ -28,7 +28,10 @@ export default function HeroPlayer({ song }: { song: any }) {
       title: song.title,
       file_url: song.file_url,
       cover_url: song.cover_url,
-      artist: artistName
+      artist: artistName,
+      user_id: song.user_id,
+      co_artist_id_1: song.co_artist_id_1,
+      co_artist_id_2: song.co_artist_id_2,
     });
   };
 

@@ -125,7 +125,7 @@ export default function TrackList({
               <button 
                 type="button"
                 className="relative h-14 w-14 sm:h-18 sm:w-18 md:h-20 md:w-20 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden shrink-0 cursor-pointer active:scale-95 transition-transform text-left p-0 shadow-2xs"
-                onClick={() => playSong({ id: song.id, title: song.title, file_url: song.file_url, cover_url: song.cover_url, artist: artistName }, songs)}
+                onClick={() => playSong({ id: song.id, title: song.title, file_url: song.file_url, cover_url: song.cover_url, artist: artistName, user_id: song.user_id, co_artist_id_1: song.co_artist_id_1, co_artist_id_2: song.co_artist_id_2 }, songs)}
               >
                 {showRank && (
                   <div
@@ -355,7 +355,7 @@ export default function TrackList({
               <div className="flex flex-col items-center justify-center shrink-0 ml-auto gap-1">
                 <button 
                   type="button"
-                  onClick={() => playSong({ id: song.id, title: song.title, file_url: song.file_url, cover_url: song.cover_url, artist: artistName }, songs)}
+                  onClick={() => playSong({ id: song.id, title: song.title, file_url: song.file_url, cover_url: song.cover_url, artist: artistName, user_id: song.user_id, co_artist_id_1: song.co_artist_id_1, co_artist_id_2: song.co_artist_id_2 }, songs)}
                   className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full border items-center justify-center transition-all shrink-0 active:scale-90 flex cursor-pointer shadow-xs ${isThisPlaying ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-900 hover:text-white hover:border-slate-900'}`}
                   title={isThisPlaying ? "一時停止" : "再生"}
                 >

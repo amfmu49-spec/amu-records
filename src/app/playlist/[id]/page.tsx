@@ -141,6 +141,9 @@ export default function PlaylistDetailPage({
         file_url: firstSong.file_url,
         cover_url: firstSong.cover_url,
         artist: artistName,
+        user_id: firstSong.user_id,
+        co_artist_id_1: firstSong.co_artist_id_1,
+        co_artist_id_2: firstSong.co_artist_id_2,
       },
       listToPlay
     );
@@ -156,6 +159,9 @@ export default function PlaylistDetailPage({
         file_url: song.file_url,
         cover_url: song.cover_url,
         artist: artistName,
+        user_id: song.user_id,
+        co_artist_id_1: song.co_artist_id_1,
+        co_artist_id_2: song.co_artist_id_2,
       },
       songs
     );

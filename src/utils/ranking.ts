@@ -52,30 +52,42 @@ export function calculateRankedSongs(songs: any[], sinceDate: Date | null): Rank
   if (!songs || songs.length === 0) return [];
 
   const scored: RankedSong[] = songs.map((song) => {
-    // 1. 再生スコア: 再生実績があれば 1P (何度再生しても上限1P)
-    const playScore = (song.play_count && song.play_count > 0) ? 1 : 0;
+    // 作者およびコラボアーティストのIDセット（自演防止の対象）
+    const authorUserIds = new Set<string>();
+    if (song.user_id) authorUserIds.add(song.user_id);
+    if (song.co_artist_id_1) authorUserIds.add(song.co_artist_id_1);
+    if (song.co_artist_id_2) authorUserIds.add(song.co_artist_id_2);
 
-    // 2. いいねスコア: ユニークユーザー数 × 2P
+    // 1. いいねスコア: 作者自身のいいねは完全除外！第三者リスナーによるユニークいいね数 × 2P
     const rawLikes = song.likes || [];
-    const validLikes = sinceDate
-      ? rawLikes.filter((l: any) => new Date(l.created_at) >= sinceDate)
-      : rawLikes;
+    const validLikes = rawLikes.filter((l: any) => {
+      // 自分の曲へのいいねはポイント対象外
+      if (l.user_id && authorUserIds.has(l.user_id)) return false;
+      if (sinceDate && new Date(l.created_at) < sinceDate) return false;
+      return true;
+    });
     const uniqueLikeUsers = new Set(validLikes.map((l: any) => l.user_id));
     const likeCount = uniqueLikeUsers.size;
     const likeScore = likeCount * 2;
 
-    // 3. コメントスコア: 3文字以上の有効コメント × 3P (重複荒らし防止のためユニークユーザーまたは3文字以上のコメント)
+    // 2. コメントスコア: 作者自身の返信コメントやお礼等は完全除外！第三者リスナーによる3文字以上の有効コメント × 3P
     const rawComments = song.amu_comments || [];
     const validComments = rawComments.filter((c: any) => {
+      // 自分の曲へのコメント（返信含む）はポイント対象外
+      if (c.user_id && authorUserIds.has(c.user_id)) return false;
       if (!c.content) return false;
       const text = c.content.trim();
       if (text.length < 3) return false; // 3文字以上のみ対象
       if (sinceDate && new Date(c.created_at) < sinceDate) return false;
       return true;
     });
-
     const validCommentCount = validComments.length;
     const commentScore = validCommentCount * 3;
+
+    // 3. 再生スコア: 不正・自演再生防止のため、第三者（リスナー）からのエンゲージメント（いいね または 有効コメント）が1件以上ある場合にのみ 1P を付与
+    // （作者自身が再生しただけの曲に1Pが付くのを完全に防止）
+    const hasThirdPartyListener = (likeCount > 0 || validCommentCount > 0);
+    const playScore = (song.play_count && song.play_count > 0 && hasThirdPartyListener) ? 1 : 0;
 
     const total = playScore + likeScore + commentScore;
 
