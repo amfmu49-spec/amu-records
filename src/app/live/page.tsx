@@ -45,6 +45,7 @@ export default function LiveStagePage() {
     isLiveMode,
     toggleLiveMode,
     triggerCheer,
+    currentCheerToast,
   } = useAudioPlayer();
 
   // ブースト＆コンボ状態
@@ -69,13 +70,8 @@ export default function LiveStagePage() {
   const textIdRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // 初回ロード：ローカルストレージから総ブースト復元 ＆ LIVEモード強制ON ＆ デフォルトランダム再生ON
+  // 初回ロード：LIVEモード強制ON ＆ デフォルトランダム再生ON
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("amu_live_total_boosts");
-      if (saved) setTotalBoosts(parseInt(saved, 10) || 0);
-    } catch {}
-
     // LIVEページに入った時点でLIVEモードがOFFなら自動でONにする
     if (!isLiveMode) {
       toggleLiveMode();
@@ -86,6 +82,17 @@ export default function LiveStagePage() {
       setIsRandom(true);
     }
   }, [isLiveMode, toggleLiveMode, isRandom, setIsRandom]);
+
+  // 再生中の曲が変わるたびに、その曲固有のトータルブースト数を復元
+  useEffect(() => {
+    if (!currentSong?.id) return;
+    try {
+      const saved = localStorage.getItem(`amu_live_song_boosts_${currentSong.id}`);
+      setTotalBoosts(saved ? parseInt(saved, 10) || 0 : 0);
+    } catch {
+      setTotalBoosts(0);
+    }
+  }, [currentSong?.id]);
 
   // 利用可能な楽曲一覧をロード＆デフォルトランダム選曲で再生開始
   useEffect(() => {
@@ -123,9 +130,11 @@ export default function LiveStagePage() {
     // 1. カウントアップ＆コンボ更新
     setTotalBoosts((prev) => {
       const next = prev + 1;
-      try {
-        localStorage.setItem("amu_live_total_boosts", String(next));
-      } catch {}
+      if (currentSong?.id) {
+        try {
+          localStorage.setItem(`amu_live_song_boosts_${currentSong.id}`, String(next));
+        } catch {}
+      }
       return next;
     });
 
@@ -196,11 +205,6 @@ export default function LiveStagePage() {
     }
 
     setParticles((prev) => [...prev.slice(-40), ...newParticles]);
-
-    // 6. 歓声SEのトリガー（5コンボごと、または特定確率で客席が沸く！）
-    if (newCombo % 7 === 0 || Math.random() < 0.25) {
-      triggerCheer();
-    }
   };
 
   // パーティクルのアニメーションループ (Canvas)
@@ -348,108 +352,117 @@ export default function LiveStagePage() {
         </button>
       </header>
 
-      {/* 7. ステージ中央：巨大LEDスクリーン（現在演奏中の楽曲プロジェクション） */}
-      <div className="relative z-20 flex flex-col items-center justify-center pt-2 sm:pt-4 px-4 text-center max-w-2xl mx-auto pointer-events-none">
+      {/* 7. ステージ中央：LEDスクリーン（現在演奏中の楽曲プロジェクション） */}
+      <div className="relative z-20 flex flex-col items-center justify-center pt-1 sm:pt-3 px-4 text-center max-w-xl mx-auto pointer-events-none">
         {currentSong ? (
           <div className="flex flex-col items-center">
-            {/* 巨大スクリーン風カバーアート */}
-            <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(244,63,94,0.4)] border-2 border-rose-500/50 relative mb-3 group">
+            {/* スクリーン風カバーアート */}
+            <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-2xl overflow-hidden shadow-[0_0_40px_rgba(244,63,94,0.35)] border-2 border-rose-500/50 relative mb-2 group">
               {currentSong.cover_url ? (
                 <img src={currentSong.cover_url} alt="Cover" className="w-full h-full object-cover animate-[pulse_4s_ease-in-out_infinite]" />
               ) : (
-                <div className="w-full h-full bg-slate-900 flex items-center justify-center text-rose-400 font-black text-xl">
+                <div className="w-full h-full bg-slate-900 flex items-center justify-center text-rose-400 font-black text-lg">
                   LIVE
                 </div>
               )}
               {isPlaying && (
                 <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                  <div className="flex items-end gap-1 h-6">
-                    <span className="w-1.5 bg-rose-400 animate-[bounce_0.8s_infinite] h-full rounded-full" />
-                    <span className="w-1.5 bg-rose-400 animate-[bounce_0.6s_infinite] h-4 rounded-full" />
-                    <span className="w-1.5 bg-rose-400 animate-[bounce_1.0s_infinite] h-full rounded-full" />
+                  <div className="flex items-end gap-1 h-5">
+                    <span className="w-1 bg-rose-400 animate-[bounce_0.8s_infinite] h-full rounded-full" />
+                    <span className="w-1 bg-rose-400 animate-[bounce_0.6s_infinite] h-3.5 rounded-full" />
+                    <span className="w-1 bg-rose-400 animate-[bounce_1.0s_infinite] h-full rounded-full" />
                   </div>
                 </div>
               )}
             </div>
 
             {/* 楽曲タイトル */}
-            <h1 className="text-xl sm:text-3xl font-black text-white drop-shadow-[0_2px_15px_rgba(0,0,0,0.9)] tracking-tight line-clamp-1 mb-1">
+            <h1 className="text-lg sm:text-2xl font-black text-white drop-shadow-[0_2px_15px_rgba(0,0,0,0.9)] tracking-tight line-clamp-1 mb-0.5">
               {currentSong.title}
             </h1>
             {/* アーティスト名 */}
-            <p className="text-xs sm:text-sm text-rose-200/90 font-bold drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">
+            <p className="text-xs sm:text-sm text-rose-200/90 font-bold drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] line-clamp-1">
               {currentSong.artist}
             </p>
           </div>
         ) : (
-          <div className="text-center py-6">
-            <p className="text-sm text-slate-300 font-bold">右上の「選曲する」から曲を選んでライブを開始！</p>
+          <div className="text-center py-4">
+            <p className="text-xs sm:text-sm text-slate-300 font-bold">右上の「選曲する」から曲を選んでライブを開始！</p>
+          </div>
+        )}
+      </div>
+
+      {/* 8. 画面中央：超巨大「BOOST!」ボタン ＆ コンボ ＆ 楽曲トータル数 ＆ コール */}
+      <div className="absolute top-[53%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center pointer-events-auto w-full max-w-sm px-4">
+        {/* 歓声トースト演出（日本人オーディエンスの歓声が発生した時） */}
+        {currentCheerToast && (
+          <div className="mb-2 px-3 py-1 rounded-full bg-slate-900/95 border border-rose-500/60 shadow-xl backdrop-blur-md animate-bounce text-[11px] sm:text-xs font-bold text-rose-300 flex items-center gap-1.5 pointer-events-none">
+            <span>👏</span>
+            <span>{currentCheerToast.name}！</span>
           </div>
         )}
 
-        {/* 総ブースト数カウンター */}
-        <div className="mt-4 flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/80 border border-white/20 backdrop-blur-md shadow-xl">
-          <span className="text-xs text-slate-400 font-bold">TOTAL BOOSTS:</span>
-          <span className="text-base sm:text-lg font-black text-amber-300 font-mono tracking-wider">
-            {totalBoosts.toLocaleString()}
-          </span>
-          <span className="text-xs">🔥</span>
-        </div>
-      </div>
-
-      {/* 8. 画面中央：超巨大「BOOST!」ボタン ＆ コンボエフェクト */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center pointer-events-auto">
         {/* コンボインジケーター */}
         {combo > 0 && (
-          <div className="mb-4 flex flex-col items-center animate-[bounce_0.4s_ease-out]">
+          <div className="mb-2 flex flex-col items-center animate-[bounce_0.4s_ease-out]">
             {comboBadge && (
               <span
-                className={`text-[11px] sm:text-xs font-black px-3 py-0.5 rounded-full bg-gradient-to-r ${comboBadge.color} text-white shadow-lg shadow-rose-500/30 uppercase tracking-widest mb-1 animate-pulse`}
+                className={`text-[10px] sm:text-xs font-black px-3 py-0.5 rounded-full bg-gradient-to-r ${comboBadge.color} text-white shadow-lg shadow-rose-500/30 uppercase tracking-widest mb-0.5 animate-pulse`}
               >
                 {comboBadge.title}
               </span>
             )}
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-3xl sm:text-5xl font-black font-mono tracking-tight bg-gradient-to-r from-amber-300 via-rose-300 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(244,63,94,0.8)]">
+            <div className="flex items-baseline gap-1">
+              <span className="text-2xl sm:text-4xl font-black font-mono tracking-tight bg-gradient-to-r from-amber-300 via-rose-300 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(244,63,94,0.8)]">
                 {combo}
               </span>
-              <span className="text-base sm:text-xl font-black text-white tracking-widest">
+              <span className="text-xs sm:text-base font-black text-white tracking-widest">
                 COMBO!
               </span>
             </div>
           </div>
         )}
 
-        {/* ★ 超巨大「BOOST!」ボタン（連打可能！） */}
+        {/* ★ 超巨大「BOOST!」ボタン（連打可能！歓声は鳴らず爽快に連打！） */}
         <button
           type="button"
           onClick={handleBoost}
-          className="relative group w-36 h-36 sm:w-44 sm:h-44 rounded-full flex flex-col items-center justify-center transition-transform duration-75 active:scale-90 hover:scale-105 cursor-pointer touch-none select-none shadow-[0_0_60px_rgba(244,63,94,0.6)] focus:outline-none"
+          className="relative group w-32 h-32 sm:w-40 sm:h-40 rounded-full flex flex-col items-center justify-center transition-transform duration-75 active:scale-90 hover:scale-105 cursor-pointer touch-none select-none shadow-[0_0_50px_rgba(244,63,94,0.6)] focus:outline-none"
           title="タップで会場をブースト！"
         >
           {/* 外側の光るリングアニメーション */}
-          <div className="absolute -inset-3 rounded-full bg-gradient-to-r from-red-600 via-pink-600 to-amber-500 opacity-75 blur-md group-hover:opacity-100 transition-opacity animate-spin" style={{ animationDuration: "8s" }} />
+          <div className="absolute -inset-2.5 rounded-full bg-gradient-to-r from-red-600 via-pink-600 to-amber-500 opacity-75 blur-md group-hover:opacity-100 transition-opacity animate-spin" style={{ animationDuration: "8s" }} />
 
           {/* ボタン本体 */}
           <div className="relative w-full h-full rounded-full bg-gradient-to-b from-rose-500 via-red-600 to-purple-800 border-4 border-white/80 flex flex-col items-center justify-center p-2 shadow-inner">
             <span className="text-2xl sm:text-3xl mb-0.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
               🔥
             </span>
-            <span className="text-xl sm:text-2xl font-black tracking-widest text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+            <span className="text-lg sm:text-2xl font-black tracking-widest text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
               BOOST!
             </span>
-            <span className="text-[10px] sm:text-xs font-bold text-rose-200 tracking-wider uppercase mt-0.5 opacity-90">
+            <span className="text-[9px] sm:text-[11px] font-bold text-rose-200 tracking-wider uppercase mt-0.5 opacity-90">
               TAP / 連打
             </span>
           </div>
         </button>
 
-        {/* 歓声ボタン（客席のコール） */}
-        <div className="mt-4 flex items-center gap-3">
+        {/* ★ この曲の総ブースト数カウンター（BOOSTボタン直下に美しく配置され、絶対に被らない！） */}
+        <div className="mt-3 flex items-center gap-2 px-3.5 sm:px-4 py-1.5 rounded-full bg-slate-900/90 border border-rose-500/50 backdrop-blur-md shadow-2xl">
+          <span className="text-[11px] sm:text-xs text-slate-300 font-bold">この曲のBOOST:</span>
+          <span className="text-base sm:text-lg font-black text-amber-300 font-mono tracking-wider">
+            {totalBoosts.toLocaleString()}
+          </span>
+          <span className="text-xs">🔥</span>
+        </div>
+
+        {/* 日本人オーディエンス歓声・コール送信ボタン（自発的に声援を送りたい時だけ押せる） */}
+        <div className="mt-2.5 flex items-center gap-2">
           <button
             type="button"
             onClick={() => triggerCheer()}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-slate-900/80 hover:bg-rose-950/80 border border-rose-500/50 backdrop-blur-md text-xs sm:text-sm font-black text-rose-300 transition-all active:scale-95 shadow-md shadow-rose-950/50 cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900/80 hover:bg-rose-950/80 border border-rose-500/50 backdrop-blur-md text-xs font-bold text-rose-300 transition-all active:scale-95 shadow-md shadow-rose-950/50 cursor-pointer"
+            title="日本人オーディエンスの歓声・コールを送る"
           >
             <span>👏</span>
             <span>歓声・コールを送る</span>

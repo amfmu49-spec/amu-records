@@ -27,6 +27,7 @@ type AudioPlayerContextType = {
   isLiveMode: boolean;
   toggleLiveMode: () => void;
   triggerCheer: () => void;
+  currentCheerToast: { name: string; id: string } | null;
   supporterRankInfo: SupporterRankInfo;
   refreshSupporterRank: () => Promise<void>;
   playSong: (song: Song, playlist?: any[]) => void;
@@ -49,6 +50,7 @@ const AudioPlayerContext = createContext<AudioPlayerContextType>({
   isLiveMode: false,
   toggleLiveMode: () => {},
   triggerCheer: () => {},
+  currentCheerToast: null,
   currentTime: 0,
   duration: 0,
   supporterRankInfo: calculateSupporterRank([]),
@@ -67,13 +69,13 @@ const AudioPlayerContext = createContext<AudioPlayerContextType>({
 
 export const useAudioPlayer = () => useContext(AudioPlayerContext);
 
-// LIVEモード 歓声バリエーションリスト（毎回違ったライブ音響）
+// LIVEモード 日本人オーディエンス歓声バリエーションリスト（日本人の大歓声・拍手・コール）
 export const LIVE_CHEERS = [
-  { id: "stadium", name: "スタジアム熱狂歓声", src: "/sounds/live/cheer_stadium.mp3" },
-  { id: "loud", name: "大歓声＆拍手", src: "/sounds/live/cheer_loud.mp3" },
-  { id: "whistle", name: "ホイッスル＆歓声", src: "/sounds/live/cheer_whistle.mp3" },
-  { id: "applause", name: "熱烈な拍手喝采", src: "/sounds/live/cheer_applause.mp3" },
-  { id: "excited", name: "ハイテンション歓声", src: "/sounds/live/cheer_excited.mp3" },
+  { id: "performance", name: "大歓声＆拍手喝采", src: "/sounds/live/cheer_performance.mp3" },
+  { id: "kyaa", name: "黄色い歓声・コール", src: "/sounds/live/cheer_kyaa.mp3" },
+  { id: "stadium", name: "スタジアム熱狂コール", src: "/sounds/live/cheer_stadium.mp3" },
+  { id: "applause", name: "会場一体の拍手喝采", src: "/sounds/live/cheer_applause.mp3" },
+  { id: "mixed", name: "オーディエンス大歓声", src: "/sounds/live/cheer_mixed.mp3" },
 ];
 
 /**
@@ -1161,6 +1163,7 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
         isLiveMode,
         toggleLiveMode,
         triggerCheer,
+        currentCheerToast,
         currentTime,
         duration,
         supporterRankInfo,
