@@ -1383,13 +1383,11 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 </span>
               )}
 
-              {/* LIVEモード専用ステージへ遷移するボタン */}
-              <Link
-                href="/live"
-                onClick={() => {
-                  if (!isLiveMode) toggleLiveMode();
-                }}
-                title="客席視点のライブステージ画面へ！"
+              {/* LIVEモード（大ホールリバーブ）のON / OFF トグルボタン（解除可能！） */}
+              <button
+                type="button"
+                onClick={toggleLiveMode}
+                title={isLiveMode ? "LIVE音響（大ホールリバーブ）を解除する" : "LIVE音響（大ホールリバーブ）をONにする"}
                 className={`relative px-2.5 sm:px-3 py-1.5 rounded-full font-black text-[10px] sm:text-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 border select-none ${
                   isLiveMode
                     ? "bg-gradient-to-r from-red-600 via-rose-600 to-purple-600 text-white border-transparent shadow-lg shadow-rose-500/30 ring-2 ring-rose-400/50"
@@ -1397,21 +1395,20 @@ export default function AudioPlayerProvider({ children }: { children: React.Reac
                 }`}
               >
                 <span className={`w-2 h-2 rounded-full shrink-0 ${isLiveMode ? "bg-white animate-pulse" : "bg-slate-400"}`} />
-                <span>LIVE</span>
+                <span>{isLiveMode ? "LIVE ON" : "LIVE OFF"}</span>
                 <span className="text-[10px] hidden sm:inline">🏟️</span>
-              </Link>
+              </button>
 
-              {/* LIVEモード中のみ出現する「歓声を送る👏」ミニボタン */}
-              {isLiveMode && isPlaying && (
-                <button
-                  type="button"
-                  onClick={triggerCheer}
-                  title="会場に歓声・拍手を送る！"
-                  className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-500/40 active:scale-90 transition-all cursor-pointer shadow-xs select-none"
+              {/* LIVEモードがONの時のみ表示される「ステージ画面へ」リンク */}
+              {isLiveMode && (
+                <Link
+                  href="/live"
+                  title="客席視点のライブステージ画面へ！"
+                  className="px-2 sm:px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-black bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-500/40 active:scale-95 transition-all cursor-pointer shadow-xs select-none flex items-center gap-1"
                 >
-                  <span>👏</span>
-                  <span className="hidden md:inline">歓声を送る</span>
-                </button>
+                  <span>ステージへ</span>
+                  <span>↗</span>
+                </Link>
               )}
 
               {/* シャッフル / ランダム再生トグルボタン */}
