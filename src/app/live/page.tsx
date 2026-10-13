@@ -125,8 +125,8 @@ export default function LiveStagePage() {
     }, 1800);
   }, []);
 
-  // BOOST! ボタンクリック時の処理
-  const handleBoost = (e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
+  // 画面タップ・連打時のブースト処理
+  const handleBoost = (e: React.MouseEvent | React.TouchEvent | React.PointerEvent) => {
     // 1. カウントアップ＆コンボ更新
     setTotalBoosts((prev) => {
       const next = prev + 1;
@@ -149,15 +149,15 @@ export default function LiveStagePage() {
     setTimeout(() => setIsScreenShaking(false), 200);
     setTimeout(() => setIsStageFlashing(false), 120);
 
-    // 3. クリック座標の取得
+    // 3. クリック／タップ座標の取得
     let clientX = window.innerWidth / 2;
     let clientY = window.innerHeight / 2;
-    if ("clientX" in e && e.clientX) {
+    if ("clientX" in e && typeof e.clientX === "number" && e.clientX > 0) {
       clientX = e.clientX;
       clientY = e.clientY;
-    } else if ("touches" in e && e.touches.length > 0) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
+    } else if ("touches" in e && (e as any).touches && (e as any).touches.length > 0) {
+      clientX = (e as any).touches[0].clientX;
+      clientY = (e as any).touches[0].clientY;
     }
 
     // 4. フローティングテキストの追加
@@ -288,7 +288,8 @@ export default function LiveStagePage() {
 
   return (
     <div
-      className={`relative w-full min-h-screen h-screen overflow-hidden bg-black select-none text-white flex flex-col justify-between ${
+      onPointerDown={handleBoost}
+      className={`relative w-full min-h-[100dvh] h-[100dvh] overflow-hidden bg-black select-none text-white flex flex-col justify-between cursor-pointer ${
         isScreenShaking ? "animate-[wiggle_0.2s_ease-in-out]" : ""
       }`}
     >
@@ -318,9 +319,12 @@ export default function LiveStagePage() {
       <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none z-20" />
 
       {/* ────────── [上部セクション] ヘッダー ＆ LEDスクリーン ────────── */}
-      <div className="relative z-30 w-full shrink-0 flex flex-col items-center">
+      <div className="relative z-30 w-full shrink-0 flex flex-col items-center pointer-events-none">
         {/* 6. 上部ヘッダーコントロール */}
-        <header className="flex items-center justify-between p-3 sm:p-5 max-w-7xl mx-auto w-full">
+        <header
+          onPointerDown={(e) => e.stopPropagation()}
+          className="flex items-center justify-between p-3 sm:p-5 max-w-7xl mx-auto w-full pointer-events-auto"
+        >
           {/* 通常画面へ戻る */}
           <Link
             href="/"
@@ -355,7 +359,7 @@ export default function LiveStagePage() {
         </header>
 
         {/* 7. ステージLEDスクリーン（現在演奏中の楽曲プロジェクション） */}
-        <div className="flex flex-col items-center justify-center px-4 text-center max-w-xl mx-auto pointer-events-none pb-1">
+        <div className="flex flex-col items-center justify-center px-4 text-center max-w-xl mx-auto pb-1">
           {currentSong ? (
             <div className="flex flex-col items-center">
               {/* スクリーン風カバーアート */}
@@ -395,72 +399,52 @@ export default function LiveStagePage() {
         </div>
       </div>
 
-      {/* ────────── [中央セクション] BOOSTボタン ＆ カウンター ＆ コール（自然な中央配置で絶対に被らない！） ────────── */}
-      <div className="relative z-30 flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto px-4 my-auto min-h-0 pointer-events-auto">
+      {/* ────────── [中央セクション] 画面タップ連打ライブ空間 ＆ コンボ ＆ 曲別ブースト ────────── */}
+      <div className="relative z-30 flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto px-4 my-auto min-h-0 pointer-events-none">
         {/* 歓声トースト演出（日本人オーディエンスの歓声が発生した時） */}
         {currentCheerToast && (
-          <div className="mb-2 px-3 py-1 rounded-full bg-slate-900/95 border border-rose-500/60 shadow-xl backdrop-blur-md animate-bounce text-[11px] sm:text-xs font-bold text-rose-300 flex items-center gap-1.5 pointer-events-none">
+          <div className="mb-2 px-3.5 py-1 rounded-full bg-slate-900/95 border border-rose-500/60 shadow-xl backdrop-blur-md animate-bounce text-[11px] sm:text-xs font-bold text-rose-300 flex items-center gap-1.5">
             <span>👏</span>
             <span>{currentCheerToast.name}！</span>
           </div>
         )}
 
-        {/* コンボインジケーター */}
+        {/* コンボインジケーター（画面どこでも連打すると出現！） */}
         {combo > 0 && (
-          <div className="mb-2 flex flex-col items-center animate-[bounce_0.4s_ease-out]">
+          <div className="mb-3 flex flex-col items-center animate-[bounce_0.4s_ease-out]">
             {comboBadge && (
               <span
-                className={`text-[10px] sm:text-xs font-black px-3 py-0.5 rounded-full bg-gradient-to-r ${comboBadge.color} text-white shadow-lg shadow-rose-500/30 uppercase tracking-widest mb-0.5 animate-pulse`}
+                className={`text-[10px] sm:text-xs font-black px-3.5 py-0.5 rounded-full bg-gradient-to-r ${comboBadge.color} text-white shadow-lg shadow-rose-500/40 uppercase tracking-widest mb-1 animate-pulse`}
               >
                 {comboBadge.title}
               </span>
             )}
-            <div className="flex items-baseline gap-1">
-              <span className="text-2xl sm:text-4xl font-black font-mono tracking-tight bg-gradient-to-r from-amber-300 via-rose-300 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_15px_rgba(244,63,94,0.8)]">
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-3xl sm:text-5xl font-black font-mono tracking-tight bg-gradient-to-r from-amber-300 via-rose-300 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(244,63,94,0.9)]">
                 {combo}
               </span>
-              <span className="text-xs sm:text-base font-black text-white tracking-widest">
+              <span className="text-sm sm:text-lg font-black text-white tracking-widest drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
                 COMBO!
               </span>
             </div>
           </div>
         )}
 
-        {/* ★ 超巨大「BOOST!」ボタン（連打可能！歓声は鳴らず爽快に連打！） */}
-        <button
-          type="button"
-          onClick={handleBoost}
-          className="relative group w-32 h-32 sm:w-40 sm:h-40 rounded-full flex flex-col items-center justify-center transition-transform duration-75 active:scale-90 hover:scale-105 cursor-pointer touch-none select-none shadow-[0_0_50px_rgba(244,63,94,0.6)] focus:outline-none"
-          title="タップで会場をブースト！"
+        {/* この曲の総ブースト数カウンター ＆ 歓声ボタン */}
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className="flex flex-col items-center gap-2 pointer-events-auto"
         >
-          {/* 外側の光るリングアニメーション */}
-          <div className="absolute -inset-2.5 rounded-full bg-gradient-to-r from-red-600 via-pink-600 to-amber-500 opacity-75 blur-md group-hover:opacity-100 transition-opacity animate-spin" style={{ animationDuration: "8s" }} />
-
-          {/* ボタン本体 */}
-          <div className="relative w-full h-full rounded-full bg-gradient-to-b from-rose-500 via-red-600 to-purple-800 border-4 border-white/80 flex flex-col items-center justify-center p-2 shadow-inner">
-            <span className="text-2xl sm:text-3xl mb-0.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
-              🔥
+          {/* この曲の総ブースト数 */}
+          <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/90 border border-rose-500/50 backdrop-blur-md shadow-2xl">
+            <span className="text-[11px] sm:text-xs text-slate-300 font-bold">この曲のBOOST:</span>
+            <span className="text-base sm:text-lg font-black text-amber-300 font-mono tracking-wider">
+              {totalBoosts.toLocaleString()}
             </span>
-            <span className="text-lg sm:text-2xl font-black tracking-widest text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
-              BOOST!
-            </span>
-            <span className="text-[9px] sm:text-[11px] font-bold text-rose-200 tracking-wider uppercase mt-0.5 opacity-90">
-              TAP / 連打
-            </span>
+            <span className="text-xs animate-pulse">🔥</span>
           </div>
-        </button>
 
-        {/* ★ この曲の総ブースト数カウンター（BOOSTボタン直下に配置し被りを100%解消） */}
-        <div className="mt-3 flex items-center gap-2 px-3.5 sm:px-4 py-1.5 rounded-full bg-slate-900/90 border border-rose-500/50 backdrop-blur-md shadow-2xl">
-          <span className="text-[11px] sm:text-xs text-slate-300 font-bold">この曲のBOOST:</span>
-          <span className="text-base sm:text-lg font-black text-amber-300 font-mono tracking-wider">
-            {totalBoosts.toLocaleString()}
-          </span>
-          <span className="text-xs">🔥</span>
-        </div>
-
-        {/* 日本人オーディエンス歓声・コール送信ボタン（自発的に声援を送りたい時だけ押せる） */}
-        <div className="mt-2.5 flex items-center gap-2">
+          {/* 日本人オーディエンス歓声・コール送信ボタン */}
           <button
             type="button"
             onClick={() => triggerCheer()}
@@ -471,10 +455,19 @@ export default function LiveStagePage() {
             <span>歓声・コールを送る</span>
           </button>
         </div>
+
+        {/* 画面連打ガイドヒント */}
+        <div className="mt-4 text-[11px] sm:text-xs font-bold text-white/50 tracking-wider flex items-center gap-1.5 animate-pulse pointer-events-none select-none">
+          <span>👆</span>
+          <span>画面のどこでもタップ・連打でBOOST！</span>
+        </div>
       </div>
 
-      {/* ────────── [下部セクション] プレイヤーコントロールバー ────────── */}
-      <footer className="relative z-30 w-full shrink-0 p-3 sm:p-5 bg-gradient-to-t from-black via-black/90 to-transparent flex flex-col items-center">
+      {/* ────────── [下部セクション] プレイヤーコントロールバー（アドレスバー被り解消のため上に引き上げ） ────────── */}
+      <footer
+        onPointerDown={(e) => e.stopPropagation()}
+        className="relative z-30 w-full shrink-0 pt-2 pb-24 sm:pb-8 pb-[max(5rem,calc(env(safe-area-inset-bottom)+3.5rem))] mb-4 sm:mb-0 bg-gradient-to-t from-black via-black/95 to-transparent flex flex-col items-center pointer-events-auto"
+      >
         <div className="max-w-4xl w-full flex items-center justify-between gap-4">
           {/* 左側：曲時間表示 */}
           <div className="text-xs font-mono text-slate-400 hidden sm:block">
@@ -573,7 +566,10 @@ export default function LiveStagePage() {
 
       {/* 11. 選曲モーダル（ドロワー） */}
       {isSongPickerOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex items-center justify-center p-4"
+        >
           <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
             {/* モーダルヘッダー */}
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
